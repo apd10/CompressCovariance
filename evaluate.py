@@ -23,6 +23,10 @@ parser.add_argument('--countsketch.range', action="store", dest="cs_range", requ
                    help="range of each array")
 parser.add_argument('--insertall.skip_samples_for_mu', action="store", dest="use_samples_mu", required=True, type=int,
                     help="use first few samples mentioned here for mu computation . then start inserting")
+parser.add_argument('--use_first_K_features', action="store" , dest="num_features_to_use", required=False, type=int, default=1000,
+                  help="We will use first K features of the dataset for complete evaluation")
+parser.add_argument('--batch', action="store" , dest="batch", required=False, type=int, default=1000,
+                  help="Batch")
 
 results = parser.parse_args()
 DATASET = results.dataset
@@ -31,10 +35,11 @@ VERIFYALL = results.verifyall
 CS_REP = results.cs_rep
 CS_RANGE = results.cs_range
 MU_SAMPLES = results.use_samples_mu
+NUM_FEATURES = results.num_features_to_use
+BATCH = results.batch
 
-
-def get_id(i, j, num_features):
-  return i * num_features + j
+def get_id(i, j):
+  return i * NUM_FEATURES + j
 
 def get_recall(true_set, pred_set):
   ts = set(true_set)
@@ -48,100 +53,152 @@ def get_precision(true_set, pred_set):
   ints = ts & ps
   return len(ints) / len(ps)
 
-def sketch_data_insertall(data, countsketch):
+
+def sketch_data_insertall(data, countsketch, batch):
   features = data.shape[1]
   num_data = data.shape[0]
-  mu_sum = np.zeros(features) # while using divide by num_samples processed
   normalizer = num_data - MU_SAMPLES
+  running_mu_sum = np.zeros(features)
+  running_mu = np.zeros(features)
+  running_mu_sum = np.sum(data[0:MU_SAMPLES,:].todense(), axis=0) # 1,features
+  
+  num_batches = int(normalizer / batch) + 1
+  for i in tqdm(range(0, num_batches)):
+    low = MU_SAMPLES + i * batch
+    high = min(low + batch, num_data)
+    dense = data[low:high, :].todense()
 
-  # bootstrapping MU_SAMPLES
-  for i in range(0, MU_SAMPLES):
-    row = data.getrow(i)
-    _,c = row.nonzero()
-    for cx in c:
-      mu_sum[cx] = mu_sum[cx] + row[0,cx]
-  data_to_insert = np.zeros(features*features)
+    running_mu_sum = running_mu_sum + np.sum(dense, axis=0)
+    running_mu = running_mu_sum / high
+    shifted = dense - running_mu 
+    cventries = np.matmul(shifted.transpose(), shifted) / normalizer # features,features
+    cventries = np.array(cventries).reshape(cventries.size)
+    # need a parallel version for this
+    for idx in range(0, len(cventries)):
+      if cventries[idx] != 0:
+        countsketch.insert(idx, cventries[idx])
 
-  for i in range(MU_SAMPLES, num_data):
-    row = data.getrow(i)
-    _,c = row.nonzero()
-    for cx in c:
-      mu_sum[cx] = mu_sum[cx] + row[0,cx]
-    mu = mu_sum / (i+1)
-    for x in range(0, len(c)):
-      cx = c[x]
-      vx = row[0, cx] - mu[cx]
-      for y in range(0, x):
-        #print(x,y)
-        cy = c[y]
-        vy  = row[0, cy] - mu[cy]
-        idx = get_id(cx, cy, features)
-        value = vx*vy / normalizer
-        data_to_insert[idx] = data_to_insert[idx] + value
-  for i in range(0, len(data_to_insert)):
-    countsketch.insert(i, value)
-  return mu_sum / num_data
+  print("Run Mu",np.sum(running_mu))
 
-def sketch_data(data, countsketch):
+
+def sketch_data(data, countsketch, batch):
   # insert all data in the sketch
   if INSERTALL:
-    mu = sketch_data_insertall(data, countsketch)
-  return mu
+    mu = sketch_data_insertall(data, countsketch, batch)
 
 
-def evaluate_verifyall(data, countsketch, mu, record_dir, filekey):
+def evaluate_verifyall(data, countsketch, record_dir, filekey):
   # compute all the covariances from all the data
   features = data.shape[1]
   num_data = data.shape[0]
   normalizer = num_data
-  covariances = np.zeros(features * features)
+  # computing actual covariances
+  densedata = data.todense()
+  mu = np.mean(densedata, axis=0) #(1,NUM_FEATURES)
+  print("Act Mu",np.sum(mu))
+  shifted = densedata - mu
+  covariances = np.matmul(shifted.transpose(), shifted) / (num_data - 1)
+  covariances = np.array(covariances).reshape(covariances.size) # TODO check stacking
 
-  for i in range(0, num_data):
-    row = data.get_row(i)
-    _,c = row.nonzero()
-    for cx in c:
-      vx = row[0, cx] - mu[cx]
-      for cy in c:
-        vy  = row[0, cy] - mu[cy]
-        idx = get_id(cx, cy, features)
-        value = vx*vy / normalizer
-        covariances[idx] = covariances[idx]
-  # now we have all the variances and covariances
-  # we will evaluate this at different quantiles of the actual covariances
   cs_covariances = np.zeros(features*features)
-  for idx in range(0, len(covariances)):
+  # we will need a parallel version for this
+  for idx in tqdm(range(0, len(covariances))):
     cs_covariances[idx] = countsketch.query(idx)
-  
 
-  qtile = np.arange(0.5, 1, 0.1)
+
+  covariances = np.abs(covariances)
+  cs_covariances = np.abs(cs_covariances)
+  print(np.corrcoef(covariances, cs_covariances))
+
+  sparsity=0.005
+  qtile = np.arange(1-sparsity, 1, sparsity/50)
   dump_values = []
-  dump_values.append("{},{},{},{},{},{}".format("qt","act_th","pt","pred_th","recall","precision"))
+  dump_values.append("{},{},{},{},{},{},{},{}\n".format("qt","act_th","pt","pred_th","recall","precision", "len_actual_ids", "len_pred_ids"))
   for qt in qtile:
     act_th = np.quantile(covariances, qt)
     actual_idxs = np.argwhere(covariances > act_th)
     actual_idxs = actual_idxs.reshape(actual_idxs.size,)
-    for pt in np.arange(0, 1, 0.05):
+    if len(actual_idxs) == 0:
+      continue
+    for pt in np.arange(1-2*sparsity, 1, sparsity/50):
       pred_th = np.quantile(cs_covariances, pt)
       pred_idxs = np.argwhere(cs_covariances > pred_th)
       pred_idxs = pred_idxs.reshape(pred_idxs.size,)
+      if len(pred_idxs) == 0:
+        continue
       recall = get_recall(actual_idxs, pred_idxs)
       precision = get_precision(actual_idxs, pred_idxs)
-      dump_values.append("{},{},{},{},{},{}".format(qt,act_th,pt,pred_th,recall,precision))
+      dump_values.append("{},{},{},{},{},{},{},{}\n".format(qt,act_th,pt,pred_th,recall,precision,len(actual_idxs),len(pred_idxs)))
   fname = join(record_dir, "data_"+filekey)
   with open(fname, "w") as f:
     f.writelines(dump_values)
   
       
-def evaluate(data, countsketch, mu, record_dir, filekey):
+def evaluate(data, countsketch, record_dir, filekey):
   if VERIFYALL:
-    evaluate_verifyall(data, countsketch, mu, record_dir, filekey)
+    evaluate_verifyall(data, countsketch, record_dir, filekey)
 
 if __name__ == '__main__':
   # return sparse dataset in coo format
   record_dir = join(cur_dir, DATASET, "record")
-  filekey = 'INS{}_VER{}_CRG{}_CRP{}_MUSMP{}'.format(INSERTALL,VERIFYALL,CS_RANGE,CS_REP,MU_SAMPLES)
+  filekey = 'INS{}_VER{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}'.format(INSERTALL,VERIFYALL,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH)
+  print(filekey)
 
   data = get_dataset(DATASET)[0]
+  np.random.seed(101)
+  original_features = data.shape[1]
+  features = np.random.randint(0, original_features, NUM_FEATURES)
+  data = data[:,features] # keep only the first few features
   countsketch = CountSketch(CS_REP, CS_RANGE)
-  mu = sketch_data(data, countsketch)
-  evaluate(data, countsketch, mu, record_dir, filekey)
+  sketch_data(data, countsketch, BATCH)
+  evaluate(data, countsketch, record_dir, filekey)
+
+
+
+
+
+
+'''
+def sketch_data_insertall(data, countsketch):
+  features = data.shape[1]
+  num_data = data.shape[0]
+  mu_sum = np.zeros(features) # while using divide by num_samples processed
+  normalizer = num_data - MU_SAMPLES
+  
+  # bootstrapping MU_SAMPLES
+  for i in range(0, MU_SAMPLES):
+    row = data.getrow(i).tocoo()
+    c = row.col
+    d = row.data
+    for x in range(0,len(c)):
+      cx = c[x]
+      mu_sum[cx] = mu_sum[cx] + d[x]
+  data_to_insert = {}
+  batch = 100
+  for i in tqdm(range(MU_SAMPLES, num_data)):
+    row = data.getrow(i).tocoo()
+    c = row.col
+    d = row.data
+    for x in range(0,len(c)):
+      cx = c[x]
+      mu_sum[cx] = mu_sum[cx] + d[x]
+    mu = mu_sum / (i+1)
+
+    for x in range(0,len(c)):
+      cx = c[x]
+      vx = d[x] - mu[cx]
+      for y in range(0,x):
+        cy = c[y]
+        vy  = d[y] - mu[cy]
+        idx = get_id(cx, cy)
+        value = vx*vy / normalizer
+        if idx in data_to_insert.keys():
+          data_to_insert[idx] = data_to_insert[idx] + value
+        else:
+          data_to_insert[idx] = value
+    if i % batch == 0:
+      for key in data_to_insert.keys():
+        countsketch.insert(i, data_to_insert[key])
+      data_to_insert = {}
+  return mu_sum / num_data
+'''
