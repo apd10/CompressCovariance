@@ -27,6 +27,8 @@ parser.add_argument('--use_first_K_features', action="store" , dest="num_feature
                   help="We will use first K features of the dataset for complete evaluation")
 parser.add_argument('--batch', action="store" , dest="batch", required=False, type=int, default=1000,
                   help="Batch")
+parser.add_argument('--threshold', action="store" , dest="threshold", required=False, type=float, default=None,
+                  help="threshold")
 
 results = parser.parse_args()
 DATASET = results.dataset
@@ -37,6 +39,19 @@ CS_RANGE = results.cs_range
 MU_SAMPLES = results.use_samples_mu
 NUM_FEATURES = results.num_features_to_use
 BATCH = results.batch
+THRESHOLD = results.threshold
+
+def printStats(series):
+  print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
+  values = []
+  for a in np.arange(0, 1, 0.1):
+    values.append(np.percentile(series, a*100))
+  values.append(np.percentile(series, 0.95*100))
+  values.append(np.percentile(series, 0.99*100))
+  values.append(np.percentile(series, 0.9999*100))
+  values.append(np.percentile(series, 0.99999*100))
+  print(np.mean(series), np.min(series), np.max(series), values)
+      
 
 def get_id(i, j):
   return i * NUM_FEATURES + j
@@ -71,7 +86,10 @@ def sketch_data_insertall(data, countsketch, batch):
     running_mu_sum = running_mu_sum + np.sum(dense, axis=0)
     running_mu = running_mu_sum / high
     shifted = dense - running_mu 
-    cventries = np.matmul(shifted.transpose(), shifted) / normalizer # features,features
+    cventries = np.matmul(shifted.transpose(), shifted) 
+    if THRESHOLD is not None:
+        cventries = np.multiply(cventries, (np.abs(cventries) > batch*THRESHOLD))
+    cventries = cventries / normalizer # features,features
     cventries = np.array(cventries).reshape(cventries.size)
     # need a parallel version for this
     for idx in range(0, len(cventries)):
@@ -109,6 +127,10 @@ def evaluate_verifyall(data, countsketch, record_dir, filekey):
   covariances = np.abs(covariances)
   cs_covariances = np.abs(cs_covariances)
   print(np.corrcoef(covariances, cs_covariances))
+  print("Stats Actual")
+  printStats(covariances)
+  print("Stats CS")
+  printStats(cs_covariances)
 
   sparsity=0.005
   qtile = np.arange(1-sparsity, 1, sparsity/50)
@@ -141,7 +163,7 @@ def evaluate(data, countsketch, record_dir, filekey):
 if __name__ == '__main__':
   # return sparse dataset in coo format
   record_dir = join(cur_dir, DATASET, "record")
-  filekey = 'INS{}_VER{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}'.format(INSERTALL,VERIFYALL,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH)
+  filekey = 'INS{}_VER{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_TH{}'.format(INSERTALL,VERIFYALL,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, THRESHOLD)
   print(filekey)
 
   data = get_dataset(DATASET)[0]
