@@ -1,10 +1,12 @@
 from sklearn.utils import murmurhash3_32 
+import scipy
 import numpy as np
 import array
 import math
 import heapq
 np.random.seed(101)
 from random_number_generator import ConsistentRandomNumberGenerator as CRNG
+import pdb
 
 def Hfunction(m, seed):
     #if seed is None:
@@ -65,7 +67,7 @@ class TopKDs() :
     
 
 class CountSketch() :
-    def __init__(self,d, R, topK=None):
+    def __init__(self,d, R, input_size, topK=None):
         ''' d: number of hash functions
             R: range of the hash function. i.e. the memory
                 to be used for count sketch
@@ -83,10 +85,25 @@ class CountSketch() :
             self.hs.append(Hfunction(self.R, self.h_seeds[i]))
             self.gs.append(Gfunction(self.g_seeds[i]))
         self.sketch_memory = np.zeros((self.d, self.R))
+        self.input_size = input_size
+        # create a R x input_size matrix so that we can do a single matmul to insert all entries
+        self.sparse_matrices = []
+        for h in range(0, self.d):
+            cols = []
+            rows = []
+            data = []
+            for i in range(0, self.input_size):
+                data.append(self.gs[h](i))
+                rows.append(self.hs[h](i))
+                cols.append(i)
+            mat = scipy.sparse.coo_matrix((data, (rows, cols)), shape=(self.R, input_size))
+            self.sparse_matrices.append(mat)
+            
 
         self.topkds = None
         if topK is not None:
             self.topkds = TopKDs(topK)
+        
 
     def insert(self, key, value=1): 
         for i in range(0, self.d):
@@ -94,6 +111,15 @@ class CountSketch() :
         if self.topkds is not None:
             count = self.query(key)
             self.topkds.insert(key, count)
+
+    def insert_all(self, values): 
+        values = values.reshape(self.input_size, 1)
+        for i in range(0, self.d):
+            self.sketch_memory[i] += self.sparse_matrices[i].dot(values).reshape(self.R,)
+        #if self.topkds is not None:
+        #    count = self.query(key)
+        #    self.topkds.insert(key, count)
+
 
     def query(self,key): 
         vs = []

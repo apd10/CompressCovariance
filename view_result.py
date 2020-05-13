@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import argparse
+import pdb
 
 args = argparse.ArgumentParser()
 args.add_argument("--files", type=str, action="store", dest="files", required=True)
@@ -13,8 +14,12 @@ FILES = results.files
 SAVEFIG = results.savefig
 
 def getlabel(f):
-    return f.split('/')[-1].split('_')[-1]
+    xs =  f.split('/')[-1].split('_')
+    return xs[-1] + '_' + xs[-2] + '_'  + xs[-3]
 
+
+f, (a0, a1) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [1, 3]})
+once = False
 for FILE in FILES.split(','):
         d = pd.read_csv(FILE, sep=",") 
         d['f1'] = 2*(d.precision * d.recall) / ((d.precision + d.recall))
@@ -22,6 +27,8 @@ for FILE in FILES.split(','):
         lens = []
         act_ths = []
         f1maxs = []
+        pdb.set_trace()
+        d = d.dropna()
 
         lens = d.len_actual_ids.unique()[::-1]
 
@@ -33,13 +40,13 @@ for FILE in FILES.split(','):
             f1maxs.append(f1max)
 
 
-        plt.subplot(211)
-        plt.plot(lens, act_ths, label='ActCov'+getlabel(FILE))
-        plt.legend()
-        ax = plt.subplot(212)
-        plt.plot(lens, f1maxs, label='f1max'+getlabel(FILE))
-        plt.legend()
-        ax.set_xlabel('TopK Sets of Actual Covariances')
+        if not once:
+            a0.plot(lens, act_ths, label='ActCov')
+            once = True
+        a0.legend()
+        a1.plot(lens, f1maxs, label='f1max'+getlabel(FILE))
+        a1.legend()
+        #ax.set_xlabel('TopK Sets of Actual Covariances')
 if SAVEFIG is None:
   plt.show()
 else:
