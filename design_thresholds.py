@@ -2,7 +2,7 @@ import numpy as np
 import math
 from scipy.stats import norm
 
-
+''' chance of missing signal variables at the first sampling '''
 def mu_hat_approx(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
     order_expect = -norm.ppf(((k - 1) / 2 - 0.375) / (k + 1 - 2 * 0.375))
     sigma_x = sigma * np.sqrt(1 / t + math.pi * (n - 1) * (1 - alpha) / (2 * k * t * (R - alpha)))
