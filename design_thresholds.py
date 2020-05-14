@@ -69,7 +69,7 @@ if __name__ == '__main__':
     '''
     Tau is the sampling threshold you choose right after the exploration period
     '''
-    Tau = 0.03
+    Tau = 0.01
 
     '''
     theta is the step size to raise the sampling thresholds.
