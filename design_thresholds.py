@@ -3,7 +3,7 @@ import math
 from scipy.stats import norm
 
 ''' chance of missing signal variables at the first sampling '''
-def mu_hat_approx(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
+def miss_prop_at_t(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
     order_expect = -norm.ppf(((k - 1) / 2 - 0.375) / (k + 1 - 2 * 0.375))
     sigma_x = sigma * np.sqrt(1 / t + math.pi * (n - 1) * (1 - alpha) / (2 * k * t * (R - alpha)))
     percentile_1 = -x / sigma_x
@@ -15,7 +15,7 @@ def mu_hat_approx(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T
     return prob_1 * norm.cdf(percentile_1) + prob_2 * norm.cdf(percentile_2) + (1 - prob_1 - prob_2)
 
 
-def miss_prop_approx(theta, Tau=Tau, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
+def miss_prop_after_t(theta, Tau=Tau, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
     order_expect = -norm.ppf((k / 2 - 0.375) / (k + 1 - 2 * 0.375))
     var = math.pi * (n - 1) * (1 - alpha) * sigma ** 2 / (2 * k * (R - alpha))
 
@@ -48,11 +48,11 @@ def miss_prop_approx(theta, Tau=Tau, n=n, R=R, k=k, sigma=sigma, signal=signal, 
 if __name__ == '__main__':
     '''
     n: number of covariance entries
-    R: length of each hash table
-    k: number of hash tables
+    R: length of each hash table, CS_RANGE
+    k: number of hash tables, CS_REP
     alpha: proportion of signal variables (upper bound)
     signal: the signal level (signal variables should be larger than 0.2)
-    sigma: variance of signal variable (sigma = (1 + signal)^2)
+    sigma: variance of signal variable (sigma = 1 + signal^2)
     t: length of exploration period
     T: total sample size
     '''
@@ -60,11 +60,11 @@ if __name__ == '__main__':
     n = NUM_FEATURES * (NUM_FEATURES - 1) / 2
     R = 12000
     k = 5
-    alpha = 2.5 * 10 ** (-3)
+    alpha = 5 * 10 ** (-3)
     signal = 0.2
-    sigma = 1.44
-    t = 1250
-    T = 5000
+    sigma = 1.04
+    t = 1250 ## exploration period
+    T = 5000 ## Total number of samples
 
     '''
     Tau is the sampling threshold you choose right after the exploration period
@@ -78,7 +78,16 @@ if __name__ == '__main__':
     theta = 0.15
 
     print('Probability of missing a signal variable during sampling: ',
-          mu_hat_approx(signal-Tau*T/t) + miss_prop_approx(theta))
+          miss_prop_at_t(signal-Tau*T/t) + miss_prop_after_t(theta))
+    
+    
+    '''
+    Find t, such that miss_prop_at_t around 0.05
+    Find theta, such that miss_prop_after_t around 0.15
+    Sum up, it is less than 0.2
+    '''
+    
+
 
 
 
