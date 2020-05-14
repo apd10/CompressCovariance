@@ -1,12 +1,6 @@
 import numpy as np
 import math
 from scipy.stats import norm
-import argparse
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--sampling_threshold', action="store", dest="sampling", required=True, type=float)
-
-
 
 def mu_hat_approx(x, n, R, k):
     order_expect = norm.ppf((k/2-0.375)/(k+1-2*0.375))
