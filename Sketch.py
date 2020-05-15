@@ -113,12 +113,23 @@ class CountSketch() :
             self.topkds.insert(key, count)
 
     def insert_all(self, values): 
-        values = values.reshape(self.input_size, 1)
+        values = np.array(values).reshape(self.input_size, 1)
         for i in range(0, self.d):
             self.sketch_memory[i] += self.sparse_matrices[i].dot(values).reshape(self.R,)
         #if self.topkds is not None:
         #    count = self.query(key)
         #    self.topkds.insert(key, count)
+
+    def query_all(self):
+        vs = []
+        for i in range(0, self.d):
+            x = self.sketch_memory[i].reshape(self.R, 1) # Rx1
+            v = self.sparse_matrices[i].transpose().dot(x) # I x 1
+            vs.append(v)
+        V = np.concatenate(vs, axis=1)
+        V = np.sort(V, axis = 1)
+        median_idx = int(self.d / 2)
+        return V[:, median_idx] # (I,)
 
 
     def query(self,key): 

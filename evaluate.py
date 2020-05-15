@@ -9,41 +9,69 @@ from datasets import get_dataset
 import pdb
 import argparse
 from tqdm import tqdm
+import concurrent
+from design_thresholds import find_best_exploration_period, find_best_theta
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', action="store", dest="dataset", type=str, required=True,
                     help="Dataset")
-parser.add_argument('--insertall', action="store_true", default=True,
+parser.add_argument('--insert', action="store", default="correlation",
                     help="insert all pairs explicitly")
-parser.add_argument('--verifyall', action="store_true", default=True,
-                    help="verifyall: do entire precision recall analysis")
 parser.add_argument('--countsketch.repetitions', action="store", dest="cs_rep", required=True, type=int,
                    help="number of repititions")
 parser.add_argument('--countsketch.range', action="store", dest="cs_range", required=True, type=int,
                    help="range of each array")
-parser.add_argument('--insertall.skip_samples_for_mu', action="store", dest="use_samples_mu", required=True, type=int,
+parser.add_argument('--insert.samples_for_mu', action="store", dest="use_samples_mu", required=True, type=int,
                     help="use first few samples mentioned here for mu computation . then start inserting")
 parser.add_argument('--use_first_K_features', action="store" , dest="num_features_to_use", required=False, type=int, default=1000,
                   help="We will use first K features of the dataset for complete evaluation")
 parser.add_argument('--batch', action="store" , dest="batch", required=False, type=int, default=1000,
                   help="Batch")
-parser.add_argument('--threshold', action="store" , dest="threshold", required=False, type=float, default=None,
-                  help="threshold")
-parser.add_argument('--sparsity', action="store" , dest="sparsity", required=False, type=float, default=0.001,
-                  help="expected sparsity. fraction of signals for plotting")
+parser.add_argument('--alpha', action="store" , dest="alpha", required=False, type=float, default=0.001,
+                  help="expected alpha. fraction of signals for plotting")
+parser.add_argument('--signal', action="store" , dest="signal", required=False, type=float, default=0.25,
+                  help="expected alpha. fraction of signals for plotting")
+parser.add_argument('--threshold_method', action='store', dest='threshold_method', required=True, type=str,
+                  help="\n constant: specify a constant threshold in threshold.const\
+                        \n infer_a1: specify values of alpha, sigma in threshold.alpha and threshold.sigma")
+parser.add_argument('--threshold.const.thold', action="store" , dest="threshold_const_thold", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.const.theta', action="store" , dest="threshold_const_theta", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.const.exp', action="store" , dest="threshold_const_exp", required=False, type=int, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.infer.thold', action="store" , dest="threshold_infer_thold", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
 
 results = parser.parse_args()
 DATASET = results.dataset
-INSERTALL = results.insertall
-VERIFYALL = results.verifyall
+INSERT = results.insert # default correlation
 CS_REP = results.cs_rep
 CS_RANGE = results.cs_range
 MU_SAMPLES = results.use_samples_mu
 NUM_FEATURES = results.num_features_to_use
 BATCH = results.batch
-THRESHOLD = results.threshold
-SPARSITY = results.sparsity
-print("Value of Threshold", THRESHOLD)
+THRESHOLD_METHOD = results.threshold_method
+THRESHOLD_CONST_THOLD = results.threshold_const_thold
+THRESHOLD_INFER_THOLD = results.threshold_infer_thold
+THRESHOLD_CONST_THETA = results.threshold_const_theta
+THRESHOLD_CONST_EXP = results.threshold_const_exp
+ALPHA = results.alpha
+SIGNAL = results.signal
+
+print("Threshold", THRESHOLD_METHOD)
+if THRESHOLD_METHOD == "constant":
+  assert(THRESHOLD_CONST_THOLD is not None)
+  assert(THRESHOLD_CONST_EXP is not None)
+elif THRESHOLD_METHOD == "infer":
+  assert(THRESHOLD_INFER_THOLD is not None)
+  assert(SIGNAL is not None)
+  
+    
+   
+ 
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP )
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -73,112 +101,195 @@ def get_precision(true_set, pred_set):
   return len(ints) / len(ps)
 
 
-def sketch_data_insertall(data, countsketch, batch):
+def sketch_data(data, countsketch, batch):
+  global filekey
   features = data.shape[1]
+  _indices = np.triu_indices(features, k=1)
+  num_entries_in_cs = len(_indices[0])
+  num_entries_in_cs = features*features
   num_data = data.shape[0]
-  normalizer = num_data - MU_SAMPLES
+
+  total_samples = num_data - MU_SAMPLES
   running_mu_sum = np.zeros(features)
   running_mu = np.zeros(features)
-  running_mu_sum = np.sum(data[0:MU_SAMPLES,:].todense(), axis=0) # 1,features
+  running_mu2 = np.zeros(features)
+  running_std = np.zeros(features)
+
+  # [0:MU_SAMPLES]
+  BASE = 0
+  running_mu_sum = np.sum(data[0:MU_SAMPLES,:].todense(), axis=0) # 1,features E(x)
+  running_mu2_sum = np.sum(np.square(data[0:MU_SAMPLES,:].todense()), axis=0) #E(x2)
+  running_mu = running_mu_sum / MU_SAMPLES
+  running_mu2 = running_mu2_sum / MU_SAMPLES
+  running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+
+  if THRESHOLD_METHOD == "constant":
+    exploration_samples = THRESHOLD_CONST_EXP
+    init_threshold = THRESHOLD_CONST_THOLD
+    theta = THRESHOLD_CONST_THETA
+
+  elif THRESHOLD_METHOD == "infer":
+    init_threshold = THRESHOLD_INFER_THOLD
+    exploration_samples = find_best_exploration_period(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, 0.05) # cannot get below 0.07 it seems
+    print("exploration_samples", exploration_samples, "/", total_samples)
+    exploration_samples = min(exploration_samples, int(0.2*total_samples))
+    print("exploration_samples", exploration_samples, "/", total_samples)
+    theta = find_best_theta(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, SIGNAL - 0.05) # 
+    print("theta", theta)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, int(theta*1000)/1000.0, exploration_samples)
+
+    
   
-  num_batches = int(normalizer / batch) + 1
+  # [ MU_SAMPLES : MU_SAMPLES + EXPLORATION ]
+  if exploration_samples > 0:
+    BASE = MU_SAMPLES
+    low = BASE
+    high = BASE + exploration_samples
+    dense = data[low:high, :].todense()
+    running_mu_sum = running_mu_sum + np.sum(dense, axis=0)
+    running_mu2_sum = running_mu2_sum + np.sum(np.square(dense), axis=0)
+    running_mu = running_mu_sum / high
+    running_mu2 = running_mu2_sum / high
+    running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+  
+    if INSERT == "correlation":
+        shifted = (dense - running_mu) / running_std
+    else:
+        shifted = (dense - running_mu)
+  
+    crentries = np.matmul(shifted.transpose(), shifted) / total_samples
+    crentries = crentries[_indices]
+    crentries = np.array(crentries).reshape(crentries.size,)
+  
+    # get triu entries
+    countsketch.insert_all(crentries)
+  
+  # [MU_SAMPLES + EXPLORATION:]
+  BASE = MU_SAMPLES + exploration_samples
+  num_batches = int(total_samples / batch) + 1
   for i in tqdm(range(0, num_batches)):
-    low = MU_SAMPLES + i * batch
+    low = BASE + i * batch
     high = min(low + batch, num_data)
     dense = data[low:high, :].todense()
-
     running_mu_sum = running_mu_sum + np.sum(dense, axis=0)
+    running_mu2_sum = running_mu2_sum + np.sum(np.square(dense), axis=0)
     running_mu = running_mu_sum / high
-    shifted = dense - running_mu 
-    cventries = np.matmul(shifted.transpose(), shifted) 
-    if THRESHOLD is not None:
-        print("non_zeros", np.sum(cventries != 0))
-        cventries = np.multiply(cventries, (np.abs(cventries) > THRESHOLD * batch))
-        print("post non_zeros", np.sum(cventries != 0))
-    cventries = cventries / normalizer # features,features
-    cventries = np.array(cventries).reshape(cventries.size)
-    # need a parallel version for this
-    #for idx in range(0, len(cventries)):
-    #  if cventries[idx] != 0:
-    #    countsketch.insert(idx, cventries[idx])
-    countsketch.insert_all(cventries) # feat^2
- 
-  print("Run Mu",np.sum(running_mu))
+    running_mu2 = running_mu2_sum / high
+    running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+    if INSERT == "correlation":
+        shifted = (dense - running_mu) / running_std
+    else:
+        shifted = (dense - running_mu)
+
+    crentries = np.matmul(shifted.transpose(), shifted) / total_samples # (N,N)
+    crentries = crentries[_indices]
+    crentries = np.array(crentries).reshape(crentries.size,)
+    # get triu
+    crestimates = countsketch.query_all()
+    thold = init_threshold + theta * (high - MU_SAMPLES)/total_samples  #Tau + theta*(t_0-t)/T
+    mask = np.abs(crestimates) >= thold
+    #print("Num Signals", np.sum(mask), "/", len(mask))
+    crentries = np.multiply(crentries, mask) # here we select the potential signals
+    countsketch.insert_all(crentries)
 
 
-def sketch_data(data, countsketch, batch):
-  # insert all data in the sketch
-  if INSERTALL:
-    mu = sketch_data_insertall(data, countsketch, batch)
+
+covariances = None
+cs_covariances = None
+
+def eval_ind(qt, pt):
+  act_th = np.quantile(covariances, qt)
+  actual_idxs = np.argwhere(covariances >= act_th)
+  actual_idxs = actual_idxs.reshape(actual_idxs.size,)
+  pred_th = np.quantile(cs_covariances, pt)
+  pred_idxs = np.argwhere(cs_covariances >= pred_th)
+  pred_idxs = pred_idxs.reshape(pred_idxs.size,)
+  if len(pred_idxs) > 0 and len(actual_idxs) > 0:
+    recall = get_recall(actual_idxs, pred_idxs)
+    precision = get_precision(actual_idxs, pred_idxs)
+  else:
+    recall = 0
+    precision = 0
+  return qt,act_th,pt,pred_th,recall,precision,len(actual_idxs),len(pred_idxs)
 
 
-def evaluate_verifyall(data, countsketch, record_dir, filekey):
+def evaluate(data, countsketch, record_dir, filekey):
+  global covariances
+  global cs_covariances
+
   # compute all the covariances from all the data
   features = data.shape[1]
+  _indices = np.triu_indices(features, k=1)
   num_data = data.shape[0]
-  normalizer = num_data
+  total_samples = num_data
+
   # computing actual covariances
   densedata = data.todense()
   mu = np.mean(densedata, axis=0) #(1,NUM_FEATURES)
-  print("Act Mu",np.sum(mu))
-  shifted = densedata - mu
-  covariances = np.matmul(shifted.transpose(), shifted) / (num_data - 1)
-  covariances = np.array(covariances).reshape(covariances.size) # TODO check stacking
+  std = np.std(densedata, axis=0) + 1e-6
 
-  cs_covariances = np.zeros(features*features)
-  # we will need a parallel version for this
-  for idx in tqdm(range(0, len(covariances))):
-    cs_covariances[idx] = countsketch.query(idx)
+  if INSERT == "correlation":
+    shifted = (densedata - mu) / std
+  else:
+    shifted = densedata - mu
+
+  covariances = np.matmul(shifted.transpose(), shifted) / total_samples
+  covariances = covariances[_indices]
+  covariances = np.array(covariances).reshape(covariances.size,)
+
+  cs_covariances = countsketch.query_all()
 
 
   covariances = np.abs(covariances)
   cs_covariances = np.abs(cs_covariances)
+
   print(np.corrcoef(covariances, cs_covariances))
   print("Stats Actual")
   printStats(covariances)
   print("Stats CS")
   printStats(cs_covariances)
+  
 
-  sparsity=SPARSITY
-  qtile = np.arange(1-sparsity, 1, sparsity/50)
+  sparsity=2*ALPHA
+  qtile = np.arange(1-sparsity, 1, sparsity/40)
+  ptile = np.arange(1-2*sparsity, 1, sparsity/40)
+  qptiles = np.transpose([np.tile(qtile, len(ptile)), np.repeat(ptile, len(qtile))])
   dump_values = []
   dump_values.append("{},{},{},{},{},{},{},{}\n".format("qt","act_th","pt","pred_th","recall","precision", "len_actual_ids", "len_pred_ids"))
-  for qt in qtile:
-    act_th = np.quantile(covariances, qt)
-    actual_idxs = np.argwhere(covariances > act_th)
-    actual_idxs = actual_idxs.reshape(actual_idxs.size,)
-    if len(actual_idxs) == 0:
-      continue
-    for pt in np.arange(1-2*sparsity, 1, sparsity/50):
-      pred_th = np.quantile(cs_covariances, pt)
-      pred_idxs = np.argwhere(cs_covariances > pred_th)
-      pred_idxs = pred_idxs.reshape(pred_idxs.size,)
-      if len(pred_idxs) == 0:
-        continue
-      recall = get_recall(actual_idxs, pred_idxs)
-      precision = get_precision(actual_idxs, pred_idxs)
-      dump_values.append("{},{},{},{},{},{},{},{}\n".format(qt,act_th,pt,pred_th,recall,precision,len(actual_idxs),len(pred_idxs)))
+  with concurrent.futures.ProcessPoolExecutor(20) as executor:
+      futures = []
+      print("submitting jobs")
+      for i in tqdm(range(0, qptiles.shape[0])):
+        qtile = qptiles[i][0]
+        ptile = qptiles[i][1]
+        futures.append(executor.submit(eval_ind, qtile, ptile))
+      ip = 0
+      print("waiting for executions")
+      for res in tqdm(concurrent.futures.as_completed(futures), total=qptiles.shape[0]):
+        ip = ip + 1
+        qt,act_th,pt,pred_th,recall,precision,lenA,lenP = res.result()
+        dump_values.append("{},{},{},{},{},{},{},{}\n".format(qt,act_th,pt,pred_th,recall,precision,lenA,lenP))
+
   fname = join(record_dir, "data_"+filekey)
   with open(fname, "w") as f:
     f.writelines(dump_values)
   
-      
-def evaluate(data, countsketch, record_dir, filekey):
-  if VERIFYALL:
-    evaluate_verifyall(data, countsketch, record_dir, filekey)
-
 if __name__ == '__main__':
   # return sparse dataset in coo format
   record_dir = join(cur_dir, DATASET, "record")
-  filekey = 'INS{}_VER{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_TH{}_SPSTY{}'.format(INSERTALL,VERIFYALL,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, THRESHOLD, SPARSITY)
   print(filekey)
 
   data = get_dataset(DATASET)[0]
   np.random.seed(101)
+  sff = np.arange(0, data.shape[0])
+  np.random.shuffle(sff)
+  data = data[sff]
   original_features = data.shape[1]
   features = np.random.randint(0, original_features, NUM_FEATURES)
   data = data[:,features] # keep only the first few features
-  countsketch = CountSketch(CS_REP, CS_RANGE, NUM_FEATURES*NUM_FEATURES)
+  _indices = np.triu_indices(NUM_FEATURES, k=1)
+  countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
+  #countsketch = CountSketch(CS_REP, CS_RANGE, NUM_FEATURES*NUM_FEATURES)
   sketch_data(data, countsketch, BATCH)
   evaluate(data, countsketch, record_dir, filekey)
 

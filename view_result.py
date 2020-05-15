@@ -27,8 +27,8 @@ for FILE in FILES.split(','):
         lens = []
         act_ths = []
         f1maxs = []
-        pdb.set_trace()
         d = d.dropna()
+        d.sort_values(['len_actual_ids'], inplace=True)
 
         lens = d.len_actual_ids.unique()[::-1]
 
