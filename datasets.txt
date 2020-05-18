@@ -12,7 +12,6 @@ avazu            4,577,464    1,000,000  inserting-nonzero verify-topk
 news20           15,935       62,061 inserting-nonzero verify-all   Mean:80.8599937245058 25%ile:35.0 50%ile:58.0 75%ile:92.0 90%ile:147.0 99%ile:482.97999999999956
 sector           6,412        55,197 inserting-nonzero verify-all   Mean:164.03992514036182 25%ile:90.0 50%ile:134.0 75%ile:196.0 90%ile:283.0 99%ile:669.4500000000016
 rcv1.binary      20,242       47,236 inserting-nonzero verify-all   Mean:75.0515759312321 25%ile:35.0 50%ile:59.0 75%ile:99.0 90%ile:155.0 99%ile:248.59000000000015
-leukemia         38           7129 inserting-all  verify-all Mean:7130.0 25%ile:7130.0 50%ile:7130.0 75%ile:7130.0 90%ile:7130.0 99%ile:7130.0
 gisette          6,000        5,000  inserting-all verify-all Mean:4955.9995 25%ile:4956.0 50%ile:4956.0 75%ile:4956.0 90%ile:4956.0 99%ile:4956.0
 
 
@@ -26,3 +25,6 @@ verify-all
 
 verify-topk
   In these experiments, it wont be possible for us to do a recall measurement because it is just not possible to do a pairwise comparison
+
+
+leukemia         38           7129 inserting-all  verify-all Mean:7130.0 25%ile:7130.0 50%ile:7130.0 75%ile:7130.0 90%ile:7130.0 99%ile:7130.0

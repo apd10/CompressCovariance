@@ -97,6 +97,9 @@ class CountSketch() :
                 rows.append(self.hs[h](i))
                 cols.append(i)
             mat = scipy.sparse.coo_matrix((data, (rows, cols)), shape=(self.R, input_size))
+            #mat = scipy.sparse.coo_matrix((np.ones(len(data)), (np.arange(len(data)), np.arange(len(data)))), shape=(self.R, input_size))
+            #print("DEBUGGING")
+            #print(np.sum(mat))
             self.sparse_matrices.append(mat)
             
 
@@ -128,8 +131,12 @@ class CountSketch() :
             vs.append(v)
         V = np.concatenate(vs, axis=1)
         V = np.sort(V, axis = 1)
-        median_idx = int(self.d / 2)
-        return V[:, median_idx] # (I,)
+
+        median_idx = self.d // 2
+        if self.d %2 == 1:
+            return V[:, median_idx] # (I,)
+        else:
+            return (V[:, median_idx] + V[:, median_idx-1])/2
 
 
     def query(self,key): 

@@ -10,7 +10,7 @@ import pdb
 import argparse
 from tqdm import tqdm
 import concurrent
-from design_thresholds import find_best_exploration_period, find_best_theta
+from design_thresholds import find_best_exploration_period, find_best_theta, find_best_exploration_period_m2
 
 
 parser = argparse.ArgumentParser()
@@ -32,7 +32,7 @@ parser.add_argument('--alpha', action="store" , dest="alpha", required=False, ty
                   help="expected alpha. fraction of signals for plotting")
 parser.add_argument('--signal', action="store" , dest="signal", required=False, type=float, default=0.25,
                   help="expected alpha. fraction of signals for plotting")
-parser.add_argument('--threshold_method', action='store', dest='threshold_method', required=True, type=str,
+parser.add_argument('--threshold_method', action='store', dest='threshold_method', required=False, type=str, default=None,
                   help="\n constant: specify a constant threshold in threshold.const\
                         \n infer_a1: specify values of alpha, sigma in threshold.alpha and threshold.sigma")
 parser.add_argument('--threshold.const.thold', action="store" , dest="threshold_const_thold", required=False, type=float, default=None,
@@ -43,7 +43,16 @@ parser.add_argument('--threshold.const.exp', action="store" , dest="threshold_co
                   help="constant threshold specified from outside")
 parser.add_argument('--threshold.infer.thold', action="store" , dest="threshold_infer_thold", required=False, type=float, default=None,
                   help="constant threshold specified from outside")
-
+parser.add_argument('--use_num_samples', action="store", dest="use_num_samples", required=False, type=int, default=None, 
+                  help="total samples to use for estimation from countsketch ")
+parser.add_argument('--target_prob1', action="store" , dest="target_prob1", required=False, type=float, default=None,
+                  help="miss at exploration ")
+parser.add_argument('--target_prob2', action="store" , dest="target_prob2", required=False, type=float, default=None,
+                  help="miss at total_samples ")
+parser.add_argument('--run_base', action="store_true" , required=False, default=False,
+                  help="run base cs ")
+parser.add_argument('--filter', action="store_true" , required=False, default=False,
+                  help="Do a filtered evaluation for values which have better confidence intervals")
 results = parser.parse_args()
 DATASET = results.dataset
 INSERT = results.insert # default correlation
@@ -59,7 +68,19 @@ THRESHOLD_CONST_THETA = results.threshold_const_theta
 THRESHOLD_CONST_EXP = results.threshold_const_exp
 ALPHA = results.alpha
 SIGNAL = results.signal
+USE_NUM_SAMPLES = results.use_num_samples
+TARGET_PROB1 = results.target_prob1
+TARGET_PROB2 = results.target_prob2
+RUN_BASE = results.run_base
+FILTER = results.filter
 
+if RUN_BASE:
+  print("Running BASE")
+  THRESHOLD_METHOD = "constant"
+  THRESHOLD_CONST_THOLD = 0
+  THRESHOLD_CONST_THETA = 0
+  THRESHOLD_CONST_EXP = 0
+assert(THRESHOLD_METHOD is not None)
 print("Threshold", THRESHOLD_METHOD)
 if THRESHOLD_METHOD == "constant":
   assert(THRESHOLD_CONST_THOLD is not None)
@@ -71,7 +92,7 @@ elif THRESHOLD_METHOD == "infer":
     
    
  
-filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP )
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP , FILTER)
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -83,6 +104,8 @@ def printStats(series):
   values.append(np.percentile(series, 0.9999*100))
   values.append(np.percentile(series, 0.99999*100))
   print(np.mean(series), np.min(series), np.max(series), values)
+  print("Suggested Signal: 99.5%-ile ", np.percentile(series, 0.995*100))
+  print("Suggested init_thold: 50%-ile ", np.percentile(series, 0.5*100))
       
 
 def get_id(i, j):
@@ -106,7 +129,6 @@ def sketch_data(data, countsketch, batch):
   features = data.shape[1]
   _indices = np.triu_indices(features, k=1)
   num_entries_in_cs = len(_indices[0])
-  num_entries_in_cs = features*features
   num_data = data.shape[0]
 
   total_samples = num_data - MU_SAMPLES
@@ -121,7 +143,8 @@ def sketch_data(data, countsketch, batch):
   running_mu2_sum = np.sum(np.square(data[0:MU_SAMPLES,:].todense()), axis=0) #E(x2)
   running_mu = running_mu_sum / MU_SAMPLES
   running_mu2 = running_mu2_sum / MU_SAMPLES
-  running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+  running_std = np.sqrt(running_mu2 - np.square(running_mu))  + 1e-6
+  #pdb.set_trace()
 
   if THRESHOLD_METHOD == "constant":
     exploration_samples = THRESHOLD_CONST_EXP
@@ -130,17 +153,22 @@ def sketch_data(data, countsketch, batch):
 
   elif THRESHOLD_METHOD == "infer":
     init_threshold = THRESHOLD_INFER_THOLD
-    exploration_samples = find_best_exploration_period(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, 0.05) # cannot get below 0.07 it seems
+    exploration_samples = find_best_exploration_period_m2(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, TARGET_PROB1) # cannot get below 0.07 it seems
     print("exploration_samples", exploration_samples, "/", total_samples)
-    exploration_samples = min(exploration_samples, int(0.2*total_samples))
+    exploration_samples = min(exploration_samples, int(0.95*total_samples))
     print("exploration_samples", exploration_samples, "/", total_samples)
-    theta = find_best_theta(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, SIGNAL - 0.05) # 
+    theta = find_best_theta(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, TARGET_PROB2) # 
     print("theta", theta)
-    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, int(theta*1000)/1000.0, exploration_samples)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_TPROB1{}_TPROB2{}_SIGNAL{}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, int(theta*1000)/1000.0, exploration_samples, TARGET_PROB1, TARGET_PROB2, SIGNAL, FILTER)
+    print("Updated filekey")
+    print(filekey)
 
     
   
   # [ MU_SAMPLES : MU_SAMPLES + EXPLORATION ]
+
+  #std = np.std(data[MU_SAMPLES:,:].todense(), axis=0)
+  #mu = np.mean(data[MU_SAMPLES:,:].todense(), axis=0)
   if exploration_samples > 0:
     BASE = MU_SAMPLES
     low = BASE
@@ -150,9 +178,11 @@ def sketch_data(data, countsketch, batch):
     running_mu2_sum = running_mu2_sum + np.sum(np.square(dense), axis=0)
     running_mu = running_mu_sum / high
     running_mu2 = running_mu2_sum / high
-    running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+    running_std = np.sqrt(running_mu2 - np.square(running_mu)) + 1e-6
   
     if INSERT == "correlation":
+        print("Correlation")
+        #shifted = (dense - mu) / std
         shifted = (dense - running_mu) / running_std
     else:
         shifted = (dense - running_mu)
@@ -175,9 +205,10 @@ def sketch_data(data, countsketch, batch):
     running_mu2_sum = running_mu2_sum + np.sum(np.square(dense), axis=0)
     running_mu = running_mu_sum / high
     running_mu2 = running_mu2_sum / high
-    running_std = np.sqrt(running_mu2 + np.square(running_mu)) + 1e-6
+    running_std = np.sqrt(running_mu2 - np.square(running_mu)) + 1e-6
     if INSERT == "correlation":
         shifted = (dense - running_mu) / running_std
+        #shifted = (dense - mu) / std
     else:
         shifted = (dense - running_mu)
 
@@ -221,10 +252,10 @@ def evaluate(data, countsketch, record_dir, filekey):
   features = data.shape[1]
   _indices = np.triu_indices(features, k=1)
   num_data = data.shape[0]
-  total_samples = num_data
+  total_samples = num_data - MU_SAMPLES
 
   # computing actual covariances
-  densedata = data.todense()
+  densedata = data[MU_SAMPLES:, :].todense()
   mu = np.mean(densedata, axis=0) #(1,NUM_FEATURES)
   std = np.std(densedata, axis=0) + 1e-6
 
@@ -280,16 +311,41 @@ if __name__ == '__main__':
   print(filekey)
 
   data = get_dataset(DATASET)[0]
+  if DATASET == "gissette":
+    data.data = data.data + 1
+  if FILTER:
+    print("FILTER IS SET!")
+    print(" Total number of features before filtering", data.shape[1])
+    x = data.tocoo().col
+    x = np.sort(x)
+    chosen = np.zeros(data.shape[1]) 
+    idx = 0 
+    for i in range(0, len(chosen)): 
+        ct = 0 
+        while(idx < len(x) and x[idx] == i): 
+            ct = ct + 1 
+            idx = idx + 1 
+        chosen[i] = ct 
+        if idx >= len(x): 
+            break 
+    mask = chosen > 0.01 * data.shape[0]
+    print("After filtering", np.sum(mask))
+    a = np.argwhere(mask) 
+    a = a.reshape(a.size,)
+    data = data[:, a]
+    print(" Total number of features after filtering", data.shape[1])
+
   np.random.seed(101)
   sff = np.arange(0, data.shape[0])
   np.random.shuffle(sff)
   data = data[sff]
+  if USE_NUM_SAMPLES is not None:
+    data = data[0:USE_NUM_SAMPLES,:]
   original_features = data.shape[1]
   features = np.random.randint(0, original_features, NUM_FEATURES)
   data = data[:,features] # keep only the first few features
   _indices = np.triu_indices(NUM_FEATURES, k=1)
   countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
-  #countsketch = CountSketch(CS_REP, CS_RANGE, NUM_FEATURES*NUM_FEATURES)
   sketch_data(data, countsketch, BATCH)
   evaluate(data, countsketch, record_dir, filekey)
 
