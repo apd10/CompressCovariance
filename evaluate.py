@@ -26,7 +26,7 @@ parser.add_argument('--insert.samples_for_mu', action="store", dest="use_samples
                     help="use first few samples mentioned here for mu computation . then start inserting")
 parser.add_argument('--use_first_K_features', action="store" , dest="num_features_to_use", required=False, type=int, default=1000,
                   help="We will use first K features of the dataset for complete evaluation")
-parser.add_argument('--batch', action="store" , dest="batch", required=False, type=int, default=1000,
+parser.add_argument('--batch', action="store" , dest="batch", required=False, type=int, default=None,
                   help="Batch")
 parser.add_argument('--alpha', action="store" , dest="alpha", required=False, type=float, default=0.001,
                   help="expected alpha. fraction of signals for plotting")
@@ -40,6 +40,8 @@ parser.add_argument('--threshold.const.thold', action="store" , dest="threshold_
 parser.add_argument('--threshold.const.theta', action="store" , dest="threshold_const_theta", required=False, type=float, default=None,
                   help="constant threshold specified from outside")
 parser.add_argument('--threshold.const.exp', action="store" , dest="threshold_const_exp", required=False, type=int, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.const.exp_frac', action="store" , dest="threshold_const_exp_frac", required=False, type=float, default=None,
                   help="constant threshold specified from outside")
 parser.add_argument('--threshold.infer.thold', action="store" , dest="threshold_infer_thold", required=False, type=float, default=None,
                   help="constant threshold specified from outside")
@@ -66,6 +68,7 @@ THRESHOLD_CONST_THOLD = results.threshold_const_thold
 THRESHOLD_INFER_THOLD = results.threshold_infer_thold
 THRESHOLD_CONST_THETA = results.threshold_const_theta
 THRESHOLD_CONST_EXP = results.threshold_const_exp
+THRESHOLD_CONST_EXP_FRAC = results.threshold_const_exp_frac
 ALPHA = results.alpha
 SIGNAL = results.signal
 USE_NUM_SAMPLES = results.use_num_samples
@@ -73,6 +76,16 @@ TARGET_PROB1 = results.target_prob1
 TARGET_PROB2 = results.target_prob2
 RUN_BASE = results.run_base
 FILTER = results.filter
+
+if BATCH is None:
+  if DATASET == "gisette":
+    BATCH = 10
+  if DATASET == "rcv1":
+    BATCH = 100
+  if DATASET == "news20":
+    BATCH = 100
+  if DATASET == "sector":
+    BATCH = 100
 
 if RUN_BASE:
   print("Running BASE")
@@ -84,15 +97,13 @@ assert(THRESHOLD_METHOD is not None)
 print("Threshold", THRESHOLD_METHOD)
 if THRESHOLD_METHOD == "constant":
   assert(THRESHOLD_CONST_THOLD is not None)
-  assert(THRESHOLD_CONST_EXP is not None)
+  assert(THRESHOLD_CONST_EXP is not None or THRESHOLD_CONST_EXP_FRAC is not None)
 elif THRESHOLD_METHOD == "infer":
   assert(THRESHOLD_INFER_THOLD is not None)
   assert(SIGNAL is not None)
   
     
-   
- 
-filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP , FILTER)
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}:{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -147,6 +158,9 @@ def sketch_data(data, countsketch, batch):
   #pdb.set_trace()
 
   if THRESHOLD_METHOD == "constant":
+    if THRESHOLD_CONST_EXP_FRAC is not None:
+      THRESHOLD_CONST_EXP = int(THRESHOLD_CONST_EXP_FRAC * total_samples)
+      print("EXPLORATION PERIOD", THRESHOLD_CONST_EXP,"/",total_samples)
     exploration_samples = THRESHOLD_CONST_EXP
     init_threshold = THRESHOLD_CONST_THOLD
     theta = THRESHOLD_CONST_THETA
@@ -217,9 +231,9 @@ def sketch_data(data, countsketch, batch):
     crentries = np.array(crentries).reshape(crentries.size,)
     # get triu
     crestimates = countsketch.query_all()
-    thold = init_threshold + theta * (high - MU_SAMPLES)/total_samples  #Tau + theta*(t_0-t)/T
+    thold = init_threshold + theta * (low - BASE)/total_samples  #Tau + theta*(t_0-t)/T # can be high / low . keeping low to match zhenweis code
     mask = np.abs(crestimates) >= thold
-    #print("Num Signals", np.sum(mask), "/", len(mask))
+    #print(i, thold, np.sum(mask), "/", len(mask))
     crentries = np.multiply(crentries, mask) # here we select the potential signals
     countsketch.insert_all(crentries)
 
