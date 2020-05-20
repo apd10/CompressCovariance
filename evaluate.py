@@ -78,7 +78,7 @@ RUN_BASE = results.run_base
 FILTER = results.filter
 
 if BATCH is None:
-  if DATASET == "gisette":
+  if DATASET == "gisette" or DATASET == "gisette_shifted":
     BATCH = 10
   if DATASET == "rcv1":
     BATCH = 100
@@ -93,6 +93,7 @@ if RUN_BASE:
   THRESHOLD_CONST_THOLD = 0
   THRESHOLD_CONST_THETA = 0
   THRESHOLD_CONST_EXP = 0
+  THRESHOLD_CONST_EXP_FRAC = 0
 assert(THRESHOLD_METHOD is not None)
 print("Threshold", THRESHOLD_METHOD)
 if THRESHOLD_METHOD == "constant":

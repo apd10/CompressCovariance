@@ -1,0 +1,20 @@
+for ds in news20 rcv1 sector
+do
+  cd ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls *EXP0*False *SIGNAL0.0?_*False *SIGNAL0.1_*False | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_uf.png
+done
+
+for ds in gisette
+do
+  cd  ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls data*EXP0*False data*TH1e*SIGNAL0.[1-6]_*False | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_uf.png
+done
+
+for ds in news20 rcv1 sector
+do
+  cd ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls data*EXP0*True data*SIGNAL0.?_*True | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_f.png
+done
+
+for ds in gisette_shifted
+do
+  cd  ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls data*EXP0*True data*TH1e*SIGNAL0.[2-9]_*True | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_f.png
+done
+
