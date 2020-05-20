@@ -1,6 +1,6 @@
 for ds in news20 rcv1 sector
 do
-  cd ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls *EXP0*False *SIGNAL0.0?_*False *SIGNAL0.1_*False | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_uf.png
+  cd ~/experiments/projects/CompressCovariance/$ds/record; python3 ../../view_result.py --files $(ls *EXP0*False *SIGNAL0.0?_*False  | xargs | sed 's/ /,/g') --label -2 --min_sig 0.05 --max_sig 0.95 --savefig /home/apd10/experiments/projects/CompressCovariance/plots/${ds}_uf.png
 done
 
 for ds in gisette

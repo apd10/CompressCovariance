@@ -80,11 +80,7 @@ FILTER = results.filter
 if BATCH is None:
   if DATASET == "gisette" or DATASET == "gisette_shifted":
     BATCH = 10
-  if DATASET == "rcv1":
-    BATCH = 100
-  if DATASET == "news20":
-    BATCH = 100
-  if DATASET == "sector":
+  if DATASET in [ "rcv1", "news20", "sector" , "siam"]:
     BATCH = 100
 
 if RUN_BASE:
