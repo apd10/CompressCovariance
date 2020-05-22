@@ -10,8 +10,8 @@ import pdb
 import argparse
 from tqdm import tqdm
 import concurrent
-from design_thresholds import find_best_exploration_period, find_best_theta, find_best_exploration_period_m2
-
+from design_thresholds import find_best_exploration_period, find_best_theta, find_best_exploration_period_m2, get_saturation_prob
+import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', action="store", dest="dataset", type=str, required=True,
@@ -55,6 +55,12 @@ parser.add_argument('--run_base', action="store_true" , required=False, default=
                   help="run base cs ")
 parser.add_argument('--filter', action="store_true" , required=False, default=False,
                   help="Do a filtered evaluation for values which have better confidence intervals")
+parser.add_argument('--threshold.infer2.sig_pct', action="store" , dest="threshold_infer2_sig_pct", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.infer2.init_pct', action="store" , dest="threshold_infer2_init_pct", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
+parser.add_argument('--threshold.infer2.inexp_frac', action="store" , dest="threshold_infer2_inexp_frac", required=False, type=float, default=None,
+                  help="constant threshold specified from outside")
 results = parser.parse_args()
 DATASET = results.dataset
 INSERT = results.insert # default correlation
@@ -76,12 +82,18 @@ TARGET_PROB1 = results.target_prob1
 TARGET_PROB2 = results.target_prob2
 RUN_BASE = results.run_base
 FILTER = results.filter
+THRESHOLD_INFER2_SIG_PCT = results.threshold_infer2_sig_pct
+THRESHOLD_INFER2_INIT_PCT = results.threshold_infer2_init_pct
+THRESHOLD_INFER2_INEXP_FRAC = results.threshold_infer2_inexp_frac
 
 if BATCH is None:
   if DATASET == "gisette" or DATASET == "gisette_shifted":
     BATCH = 10
-  if DATASET in [ "rcv1", "news20", "sector" , "siam"]:
+  if DATASET in [ "rcv1", "news20", "sector" , "siam", "cifar10"]:
     BATCH = 100
+  if DATASET == "epsilon":
+    BATCH = 2000
+  
 
 if RUN_BASE:
   print("Running BASE")
@@ -96,11 +108,20 @@ if THRESHOLD_METHOD == "constant":
   assert(THRESHOLD_CONST_THOLD is not None)
   assert(THRESHOLD_CONST_EXP is not None or THRESHOLD_CONST_EXP_FRAC is not None)
 elif THRESHOLD_METHOD == "infer":
+  assert(INSERT == "correlation")
   assert(THRESHOLD_INFER_THOLD is not None)
   assert(SIGNAL is not None)
+  assert(TARGET_PROB2 is not None)
+  assert(TARGET_PROB1 is not None)
+elif THRESHOLD_METHOD == "infer2":
+  assert(THRESHOLD_INFER2_SIG_PCT is not None)
+  assert(THRESHOLD_INFER2_INIT_PCT is not None)
+  assert(THRESHOLD_INFER2_INEXP_FRAC is not None)
+  assert(TARGET_PROB2 is not None)
+  assert(TARGET_PROB1 is not None)
   
     
-filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}:{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -133,7 +154,7 @@ def get_precision(true_set, pred_set):
 
 
 def sketch_data(data, countsketch, batch):
-  global filekey
+  global filekey,THRESHOLD_CONST_EXP,TARGET_PROB1
   features = data.shape[1]
   _indices = np.triu_indices(features, k=1)
   num_entries_in_cs = len(_indices[0])
@@ -152,7 +173,8 @@ def sketch_data(data, countsketch, batch):
   running_mu = running_mu_sum / MU_SAMPLES
   running_mu2 = running_mu2_sum / MU_SAMPLES
   running_std = np.sqrt(running_mu2 - np.square(running_mu))  + 1e-6
-  #pdb.set_trace()
+  BASE = MU_SAMPLES
+  print("Phase MU", BASE)
 
   if THRESHOLD_METHOD == "constant":
     if THRESHOLD_CONST_EXP_FRAC is not None:
@@ -166,14 +188,76 @@ def sketch_data(data, countsketch, batch):
     init_threshold = THRESHOLD_INFER_THOLD
     exploration_samples = find_best_exploration_period_m2(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, TARGET_PROB1) # cannot get below 0.07 it seems
     print("exploration_samples", exploration_samples, "/", total_samples)
-    exploration_samples = min(exploration_samples, int(0.95*total_samples))
+    exploration_samples = min(exploration_samples, int(0.99*total_samples))
     print("exploration_samples", exploration_samples, "/", total_samples)
     theta = find_best_theta(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, TARGET_PROB2) # 
     print("theta", theta)
-    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_TPROB1{}_TPROB2{}_SIGNAL{}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, int(theta*1000)/1000.0, exploration_samples, TARGET_PROB1, TARGET_PROB2, SIGNAL, FILTER)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{:.1e}_THETA{:.1e}_EXP{}_TPROB1{}_TPROB2{}_SIGNAL{:.1e}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, theta, exploration_samples, TARGET_PROB1, TARGET_PROB2, SIGNAL, FILTER)
     print("Updated filekey")
     print(filekey)
 
+  elif THRESHOLD_METHOD == "infer2":
+    #THRESHOLD_INFER2_SIG_PCT
+    #THRESHOLD_INFER2_INIT_PCT
+    #THRESHOLD_INFER2_INEXP_FRAC 
+    sat_prob = get_saturation_prob(num_entries_in_cs, CS_RANGE, CS_REP, ALPHA)
+    print("Updating TARGET_PROB1", TARGET_PROB1, "to", max(TARGET_PROB1, sat_prob * 1.01), "sat prob", sat_prob)
+    TARGET_PROB1 = max(TARGET_PROB1, sat_prob * 1.01)
+    
+    in_exploration_samples = int(THRESHOLD_INFER2_INEXP_FRAC * total_samples)
+    assert(in_exploration_samples > 0)
+    low = BASE
+    high = BASE + in_exploration_samples
+    dense = data[low:high, :].todense()
+    running_mu_sum = running_mu_sum + np.sum(dense, axis=0)
+    running_mu2_sum = running_mu2_sum + np.sum(np.square(dense), axis=0)
+    running_mu = running_mu_sum / high
+    running_mu2 = running_mu2_sum / high
+    running_std = np.sqrt(running_mu2 - np.square(running_mu)) + 1e-6
+  
+    if INSERT == "correlation":
+        print("Correlation")
+        #shifted = (dense - mu) / std
+        shifted = (dense - running_mu) / running_std
+    else:
+        shifted = (dense - running_mu)
+  
+    crentries = np.matmul(shifted.transpose(), shifted) / total_samples
+    crentries = crentries[_indices]
+    crentries = np.array(crentries).reshape(crentries.size,)
+  
+    # get triu entries
+    countsketch.insert_all(crentries)
+    cs_crentries = np.abs(countsketch.query_all())
+
+    signal = np.percentile(cs_crentries, THRESHOLD_INFER2_SIG_PCT) * total_samples / in_exploration_samples # we always add normalized data
+    init_threshold =  np.percentile(cs_crentries, THRESHOLD_INFER2_INIT_PCT) #* total_samples / in_exploration_samples # we always add normalized data
+    if INSERT != "correlation":
+        var = running_mu2 - np.square(running_mu)
+        vii_vjj = np.triu(np.matmul(var.reshape(var.size, 1 ), var.reshape(1, var.size)), k=1)
+        mean_vii_vjj = np.mean(vii_vjj)
+    else:
+        mean_vii_vjj = 1
+    print("mean_vii_vjj", mean_vii_vjj)
+    sigma = np.sqrt( mean_vii_vjj+ signal**2)# Approximate SIGMA
+    print("signal", signal)
+    print("sigma", sigma)
+
+    exploration_samples = find_best_exploration_period_m2(signal, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, TARGET_PROB1, sigma = sigma) 
+    print("exploration_samples", exploration_samples, "/", total_samples)
+    exploration_samples = min(exploration_samples, int(0.99*total_samples)) # upper bound
+    print("exploration_samples", exploration_samples, "/", total_samples)
+    # we already spent in_exploration_samples so adjust before finding theta
+    exploration_samples = max(exploration_samples, in_exploration_samples) # lower bound
+    print("exploration_samples", exploration_samples, "/", total_samples)
+    theta = find_best_theta(signal, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, TARGET_PROB2, sigma = sigma) # 
+    print("theta", theta)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{:.2e}_METHOD{}_TH{:.2e}_THETA{:.2e}_INEXP{}_EXP{}_{}_TPROB1{}_TPROB2{}_SIGNAL{:.2e}_{}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, init_threshold, theta, in_exploration_samples, THRESHOLD_INFER2_INEXP_FRAC, exploration_samples, TARGET_PROB1, TARGET_PROB2, signal, THRESHOLD_INFER2_SIG_PCT, FILTER)
+    print("Updated filekey")
+    print(filekey)
+    exploration_samples = exploration_samples - in_exploration_samples
+    BASE = BASE + in_exploration_samples
+    print("Phase INEXP", BASE)
     
   
   # [ MU_SAMPLES : MU_SAMPLES + EXPLORATION ]
@@ -181,7 +265,6 @@ def sketch_data(data, countsketch, batch):
   #std = np.std(data[MU_SAMPLES:,:].todense(), axis=0)
   #mu = np.mean(data[MU_SAMPLES:,:].todense(), axis=0)
   if exploration_samples > 0:
-    BASE = MU_SAMPLES
     low = BASE
     high = BASE + exploration_samples
     dense = data[low:high, :].todense()
@@ -204,9 +287,10 @@ def sketch_data(data, countsketch, batch):
   
     # get triu entries
     countsketch.insert_all(crentries)
-  
+  BASE = BASE + exploration_samples
+  print("Phase EXP", BASE)
+  print("POST EXP:", np.mean(countsketch.query_all()))
   # [MU_SAMPLES + EXPLORATION:]
-  BASE = MU_SAMPLES + exploration_samples
   num_batches = int(total_samples / batch) + 1
   for i in tqdm(range(0, num_batches)):
     low = BASE + i * batch
@@ -230,7 +314,7 @@ def sketch_data(data, countsketch, batch):
     crestimates = countsketch.query_all()
     thold = init_threshold + theta * (low - BASE)/total_samples  #Tau + theta*(t_0-t)/T # can be high / low . keeping low to match zhenweis code
     mask = np.abs(crestimates) >= thold
-    #print(i, thold, np.sum(mask), "/", len(mask))
+    print(i, thold, np.sum(mask), "/", len(mask))
     crentries = np.multiply(crentries, mask) # here we select the potential signals
     countsketch.insert_all(crentries)
 
@@ -240,10 +324,11 @@ covariances = None
 cs_covariances = None
 
 def eval_ind(qt, pt):
-  act_th = np.quantile(covariances, qt)
+  global covariances, cs_covariances
+  act_th = qt # np.quantile(covariances, qt)
   actual_idxs = np.argwhere(covariances >= act_th)
   actual_idxs = actual_idxs.reshape(actual_idxs.size,)
-  pred_th = np.quantile(cs_covariances, pt)
+  pred_th = pt # np.quantile(cs_covariances, pt)
   pred_idxs = np.argwhere(cs_covariances >= pred_th)
   pred_idxs = pred_idxs.reshape(pred_idxs.size,)
   if len(pred_idxs) > 0 and len(actual_idxs) > 0:
@@ -252,7 +337,7 @@ def eval_ind(qt, pt):
   else:
     recall = 0
     precision = 0
-  return qt,act_th,pt,pred_th,recall,precision,len(actual_idxs),len(pred_idxs)
+  return -1,act_th,-1,pred_th,recall,precision,len(actual_idxs),len(pred_idxs)
 
 
 def evaluate(data, countsketch, record_dir, filekey):
@@ -284,6 +369,7 @@ def evaluate(data, countsketch, record_dir, filekey):
 
   covariances = np.abs(covariances)
   cs_covariances = np.abs(cs_covariances)
+  np.savetxt('actual_covariances'+DATASET+'.np', covariances)
 
   print(np.corrcoef(covariances, cs_covariances))
   print("Stats Actual")
@@ -293,11 +379,23 @@ def evaluate(data, countsketch, record_dir, filekey):
   
 
   sparsity=2*ALPHA
-  qtile = np.arange(1-sparsity, 1, sparsity/40)
-  ptile = np.arange(1-2*sparsity, 1, sparsity/40)
+  topQ = int(len(covariances) * sparsity)
+  topP = min(len(covariances)-1, int(len(covariances) * sparsity * 4))
+  
+  ac_signals = np.sort(covariances)[::-1][:topQ]
+  pr_signals = np.sort(cs_covariances)[::-1][:topP]
+  if topQ > 40:
+    qtile = ac_signals[np.arange(0, topQ, int(topQ/40))]
+  else:
+    qtile = ac_signals
+  if topP > 40:
+    ptile = pr_signals[np.arange(0, topP, int(topP/80))]
+  else:
+    ptile = pr_signals
+
   qptiles = np.transpose([np.tile(qtile, len(ptile)), np.repeat(ptile, len(qtile))])
   dump_values = []
-  dump_values.append("{},{},{},{},{},{},{},{}\n".format("qt","act_th","pt","pred_th","recall","precision", "len_actual_ids", "len_pred_ids"))
+  dump_values.append("{},{},{},{},{},{},{},{},{}\n".format("qt","act_th","pt","pred_th","recall","precision", "len_actual_ids", "len_pred_ids", "range_actual"))
   with concurrent.futures.ProcessPoolExecutor(20) as executor:
       futures = []
       print("submitting jobs")
@@ -310,11 +408,24 @@ def evaluate(data, countsketch, record_dir, filekey):
       for res in tqdm(concurrent.futures.as_completed(futures), total=qptiles.shape[0]):
         ip = ip + 1
         qt,act_th,pt,pred_th,recall,precision,lenA,lenP = res.result()
-        dump_values.append("{},{},{},{},{},{},{},{}\n".format(qt,act_th,pt,pred_th,recall,precision,lenA,lenP))
+        dump_values.append("{},{},{},{},{},{},{},{},{}\n".format(qt,act_th,pt,pred_th,recall,precision,lenA,lenP,topQ))
 
   fname = join(record_dir, "data_"+filekey)
   with open(fname, "w") as f:
     f.writelines(dump_values)
+ 
+  df = pd.DataFrame(data = {"cov": covariances, "cs_cov" : cs_covariances})
+  df = df.sort_values(['cs_cov'], ascending=False)
+  num = 100
+  values = []
+  for frac in np.arange(0.1,1.0,0.1):
+    t = int(topQ * frac)
+    values.append('{},{},{}\n'.format(t, frac, np.mean(df[:t]["cov"])))
+
+  fname = join(record_dir, "correlations_"+filekey)
+  with open(fname, "w") as f:
+    f.writelines(values)
+  
   
 if __name__ == '__main__':
   # return sparse dataset in coo format
@@ -322,8 +433,11 @@ if __name__ == '__main__':
   print(filekey)
 
   data = get_dataset(DATASET)[0]
-  if DATASET == "gissette":
-    data.data = data.data + 1
+  #data.data = data.data * np.sqrt(10000)
+  if DATASET == "cifar10":
+    data = data[:, 0:1024] # single channel data
+    data.data = data.data / 256
+    print(data.shape)
   if FILTER:
     print("FILTER IS SET!")
     print(" Total number of features before filtering", data.shape[1])
@@ -356,9 +470,10 @@ if __name__ == '__main__':
   features = np.random.randint(0, original_features, NUM_FEATURES)
   data = data[:,features] # keep only the first few features
   _indices = np.triu_indices(NUM_FEATURES, k=1)
-  countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
-  sketch_data(data, countsketch, BATCH)
-  evaluate(data, countsketch, record_dir, filekey)
+  if True:
+    countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
+    sketch_data(data, countsketch, BATCH)
+    evaluate(data, countsketch, record_dir, filekey)
 
 
 

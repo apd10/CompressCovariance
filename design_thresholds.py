@@ -4,6 +4,12 @@ from scipy.stats import norm
 import pdb
 
 ''' chance of missing signal variables at the first sampling '''
+def get_saturation_prob(n, R, k, alpha):
+    p = 0.5 + 0.5 * ((R - alpha) / R) ** (n - 1)
+    prob_1 = p ** k
+    prob_2 = k * (1 - p) * p ** (k - 1)
+    return 1 - prob_1 - prob_2
+
 def miss_prop_at_t(x, n, R, k, sigma, signal, alpha, T, t):
     print(">", x, n, R, k, sigma, signal, alpha, T, t)
     order_expect = -norm.ppf(((k - 1) / 2 - 0.375) / (k + 1 - 2 * 0.375))
@@ -13,6 +19,8 @@ def miss_prop_at_t(x, n, R, k, sigma, signal, alpha, T, t):
     p = 0.5 + 0.5 * ((R - alpha) / R) ** (n - 1)
     prob_1 = p ** k
     prob_2 = k * (1 - p) * p ** (k - 1)
+    print("Saturation Probability", (1 - prob_1 - prob_2))
+
 
     return prob_1 * norm.cdf(percentile_1) + prob_2 * norm.cdf(percentile_2) + (1 - prob_1 - prob_2)
 
@@ -47,7 +55,7 @@ def miss_prop_after_t(theta, Tau, n, R, k, sigma, signal, alpha, T, t):
     return a1 * prob_1 + a2 * prob_2
 
 
-def find_best_exploration_period(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability):
+def find_best_exploration_period(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability, sigma=None):
     '''
         signal : signal level (for correlation recommended is 0.2)
         alpha : proportion of signal variables . More of an upper bound . give reasonable value. (eg. 0.5% = 0.005)
@@ -62,8 +70,8 @@ def find_best_exploration_period(signal, alpha, init_threshold, num_features, cs
     '''
     #miss_prop_at_t(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
     print(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability)
-
-    sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
+    if sigma is None: # This is CORRELATION CALL
+        sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
     start = 1
     end = total_samples
     while(end > start + 1):
@@ -80,7 +88,7 @@ def find_best_exploration_period(signal, alpha, init_threshold, num_features, cs
         end = mid 
     return start
 
-def find_best_exploration_period_m2(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability):
+def find_best_exploration_period_m2(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability, sigma=None):
     '''
         signal : signal level (for correlation recommended is 0.2)
         alpha : proportion of signal variables . More of an upper bound . give reasonable value. (eg. 0.5% = 0.005)
@@ -95,8 +103,8 @@ def find_best_exploration_period_m2(signal, alpha, init_threshold, num_features,
     '''
     #miss_prop_at_t(x, n=n, R=R, k=k, sigma=sigma, signal=signal, alpha=alpha, T=T, t=t):
     print(signal, alpha, init_threshold, num_features, cs_params, total_samples, target_miss_probability)
-
-    sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
+    if sigma is None:
+        sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
     start = 1
     end = total_samples
     values = []
@@ -123,17 +131,18 @@ def find_best_exploration_period_m2(signal, alpha, init_threshold, num_features,
     else:
       return mid
 
-def find_best_theta(signal, alpha, init_threshold, num_features, cs_params, total_samples, exploration_samples, target_miss_probability):
+def find_best_theta(signal, alpha, init_threshold, num_features, cs_params, total_samples, exploration_samples, target_miss_probability, sigma=None):
   #def miss_prop_after_t(theta, Tau, n, R, k, sigma, signal, alpha, T, t):
-    start = 0.001
-    end = signal - 0.001 # theta has to be less than signal
+    start = 0.01 * signal
+    end = 0.99 * signal # theta has to be less than signal
     # least count 
-    least_count = 0.005 # 
+    least_count = 0.001 * signal # 
 
 
     while(end > start + least_count):
       mid = (start + end)/2
-      sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
+      if sigma is None: #correlations
+          sigma = np.sqrt(1 + signal**2) # TODO This is true only for correlations
       prob = miss_prop_after_t(theta = mid, Tau = init_threshold,
                               n=num_features, R=cs_params["R"],
                               k=cs_params["K"], sigma=sigma,
