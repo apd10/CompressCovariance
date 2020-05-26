@@ -35,7 +35,7 @@ def getlabel(f):
     xs =  f.split('/')[-1].split('_')
     #return xs[5] + '_' + xs[-1] + '_' + xs[-2] + '_'  + xs[-3]
     if "infer2" in f:
-      lbl = "ASCS EXP SIG:"+xs[-2]
+      lbl = "ASCS SIGPCT:"+xs[-2]
     elif "infer" in f:
       lbl = "ASCS SIG:"+xs[15]
     else:
