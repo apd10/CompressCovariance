@@ -84,7 +84,7 @@ class CountSketch() :
         
 
     def insert(self, indices, values, thold): 
-        print("Insert")
+        #print("Insert")
         # make the 
         #pdb.set_trace()
         # TODO assumming batch size 1
@@ -103,28 +103,27 @@ class CountSketch() :
           flat_values = torch.mul(g_matrix, entry_matrix).reshape(1,-1).squeeze()
           self.sketch_memory[i].scatter_add_(0, flat_index, flat_values)
     
-        print("Insert Complete")
+        #print("Insert Complete")
 
         # Insert the top K into the heap structure. Heap with CS setting is a bit unreliable. with 
-        #if self.topkds is not None :
-          #values = self.query(id_matrix) # values will be NxN
+        if self.topkds is not None :
+          values = self.query(id_matrix) # values will be NxN
 
           #print("TOPK insertion Start")
-          #pdb.set_trace()
-          #values = torch.triu(values, diagonal=1) # just in case
-          #values = torch.abs(values) # absolute value
-          #values = values.reshape(1,-1).squeeze()
-          #ids = id_matrix.reshape(1,-1).squeeze()
-          #idx = torch.topk(values, k=self.topK)[1] # topK should be small like 1000
-          #values = values[idx]
-          #ids = ids[idx]
-          #self.topkds.insert(ids, values)
+          values = torch.triu(values, diagonal=1) # just in case
+          values = torch.abs(values) # absolute value
+          values = values.reshape(1,-1).squeeze()
+          ids = id_matrix.reshape(1,-1).squeeze()
+          idx = torch.topk(values, k=min(len(values), self.topK))[1] # topK should be small like 1000
+          values = values[idx]
+          ids = ids[idx]
+          self.topkds.insert(ids, values)
         #print("TOPK insertion done")
 
     def query(self, id_matrix): 
         #pdb.set_trace()
         
-        print("Query")
+        #print("Query")
         vs = []
         for i in range(self.d):
           h_matrix = (self.HA[i] * id_matrix**2  + self.HB[i] * id_matrix + self.HC[i])%self.rng.big_prime %self.R
@@ -133,7 +132,7 @@ class CountSketch() :
           vs.append(v)
         V = torch.stack(vs)
         V = torch.sort(V)[0] # self.d x N x N
-        print("Query Complete")
+        #print("Query Complete")
         if self.d %2 == 1:
             return V[self.d//2]
         else:

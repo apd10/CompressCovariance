@@ -16,6 +16,7 @@ from os.path import dirname, abspath, join
 import glob
 from Sketch import *
 from tqdm import tqdm
+import pickle
 
 
 
@@ -141,7 +142,7 @@ def train(data_file, countsketch, max_d):
       theta = THRESHOLD_CONST_THETA
 
     ignored = 0
-    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=1000):
+    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=350000):
         #indices batch x features
         #values batch x features
         print(iteration, indices.shape)
@@ -181,7 +182,8 @@ def train(data_file, countsketch, max_d):
     print("IGNORED", ignored)
 
 def dump_topk(countsketch):
-    pdb.set_trace()
+    with open("topK.pickle", "wb") as f:
+      pickle.dump(countsketch.topkds.dictionary, f)
 
 if __name__ == '__main__':
     datafile = '/home/apd10/experiments/projects/CompressCovariance/' + DATASET + '/train.txt'
