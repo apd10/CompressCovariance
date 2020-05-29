@@ -11,6 +11,7 @@ class SimpleDataset(data.Dataset):
     def __init__(self, X_file):
         super(SimpleDataset, self).__init__()
         self.d = skds.load_svmlight_file(X_file)[0]
+        #self.d = self.d[:,0:1000]
         self.length = self.d.shape[0]
 
     def __len__(self):

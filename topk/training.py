@@ -19,7 +19,6 @@ from tqdm import tqdm
 import pickle
 
 
-
 parser = argparse.ArgumentParser()
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', action="store", dest="dataset", type=str, required=True,
@@ -115,6 +114,7 @@ def my_collate(batch):
 
 
 def train(data_file, countsketch, max_d):
+    dic_frac = 0.9
     global THRESHOLD_CONST_EXP
     # ===========================================================
     # Prepare train dataset & test dataset
@@ -142,10 +142,9 @@ def train(data_file, countsketch, max_d):
       theta = THRESHOLD_CONST_THETA
 
     ignored = 0
-    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=350000):
+    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=data_set.__len__()):
         #indices batch x features
         #values batch x features
-        print(iteration, indices.shape)
         if indices.shape[1] > 9000:
           ignored = ignored + 1
           print("IGNORED", ignored)
@@ -161,7 +160,6 @@ def train(data_file, countsketch, max_d):
         running_mu = running_mu_sum / num_samples
         running_mu2 = running_mu2_sum / num_samples
         running_std = torch.sqrt(running_mu2 - running_mu ** 2)  + 1e-6
-        
         if INSERT == "correlation":
             # NOTE we are computing E(XY/(std(X) std(Y))) if we were to do -mu,  the data is not sparse
             values = values  / running_std[indices]
@@ -171,18 +169,21 @@ def train(data_file, countsketch, max_d):
             # phase 1
             continue
         elif iteration * BATCH_SIZE < MU_SAMPLES + exploration_samples:
+            #npdb.set_trace()
             # phase 2
             # we only add to count sketch without any sampling
-            countsketch.insert(indices, values, None)
+            countsketch.insert(indices, values, None, (iteration > dic_frac * data_set.__len__()))
             continue
         else:
             # insert with thold
             thold = init_threshold + (num_samples - exploration_samples - MU_SAMPLES) / total_samples * theta
-            countsketch.insert(indices, values, thold)
+            countsketch.insert(indices, values, thold, (iteration > dic_frac * data_set.__len__()))
+        if iteration == data_set.__len__() -2:
+            pdb.set_trace()
     print("IGNORED", ignored)
 
 def dump_topk(countsketch):
-    with open("topK.pickle", "wb") as f:
+    with open(DATASET+"_topK.pickle", "wb") as f:
       pickle.dump(countsketch.topkds.dictionary, f)
 
 if __name__ == '__main__':

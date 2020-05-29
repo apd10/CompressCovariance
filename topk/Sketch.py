@@ -19,7 +19,6 @@ def Gfunction(seed):
     #  seed = np.random.randint(0,100000)
     return lambda x : np.sign(murmurhash3_32(key=x, seed=seed))
 
-
 class TopKDs() :
     ''' This is a data structure for top k elements 
         To optimize find, insert, delete minimum and update operations
@@ -33,21 +32,19 @@ class TopKDs() :
     def show(self):
         print(self.dictionary)
     def insert(self, ids , values):
-        ids = ids.cpu()
-        values = values.cpu()
+        ids = np.array(ids.cpu())
+        values = np.array(values.cpu())
         for idx in range(0, len(ids)):
           self.dictionary[ids[idx]] = values[idx]
         k_keys_sorted_by_values = heapq.nlargest(self.capacity, self.dictionary, key=self.dictionary.get)
         ndictionary = {key:self.dictionary[key] for key in k_keys_sorted_by_values}
         del self.dictionary
+
         self.dictionary = ndictionary
         
-        
-                    
     def getTop(self):
         return self.dictionary
    
-
 class CountSketch() :
     def __init__(self,d, R, max_d, topK, device_id):
         ''' d: number of hash functions
@@ -83,7 +80,7 @@ class CountSketch() :
             self.topkds = TopKDs(topK)
         
 
-    def insert(self, indices, values, thold): 
+    def insert(self, indices, values, thold, updateKDS): 
         #print("Insert")
         # make the 
         #pdb.set_trace()
@@ -106,18 +103,21 @@ class CountSketch() :
         #print("Insert Complete")
 
         # Insert the top K into the heap structure. Heap with CS setting is a bit unreliable. with 
-        if self.topkds is not None :
-          values = self.query(id_matrix) # values will be NxN
+        if self.topkds is not None and updateKDS:
+          print("Updating")
+          qvalues = self.query(id_matrix) # qvalues will be NxN
 
           #print("TOPK insertion Start")
-          values = torch.triu(values, diagonal=1) # just in case
-          values = torch.abs(values) # absolute value
-          values = values.reshape(1,-1).squeeze()
+          l = qvalues.shape[0]
+          n = int(l*(l-1)/2)
+          qvalues = torch.triu(qvalues, diagonal=1) # just in case
+          qvalues = torch.abs(qvalues) # absolute value
+          qvalues = qvalues.reshape(1,-1).squeeze()
           ids = id_matrix.reshape(1,-1).squeeze()
-          idx = torch.topk(values, k=min(len(values), self.topK))[1] # topK should be small like 1000
-          values = values[idx]
+          idx = torch.topk(qvalues, k=min(n, self.topK))[1] # topK should be small like 1000
+          qvalues = qvalues[idx]
           ids = ids[idx]
-          self.topkds.insert(ids, values)
+          self.topkds.insert(ids, qvalues)
         #print("TOPK insertion done")
 
     def query(self, id_matrix): 
@@ -137,5 +137,3 @@ class CountSketch() :
             return V[self.d//2]
         else:
             return (V[self.d//2 - 1] + V[self.d//2])/2
-
-
