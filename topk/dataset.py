@@ -7,6 +7,26 @@ import pandas as pd
 import sklearn.datasets as skds
 
 
+class SimpleDNADataset(data.Dataset):
+    def __init__(self, X_file):
+        super(SimpleDNADataset, self).__init__()
+        with open(X_file, "r") as f:
+            self.d = f.readlines()
+        self.length = len(self.d)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        xs = self.d[index].strip().split(' ')
+        xs = [int(i.split(':')[0]) for i in xs[1:]]
+        indices = np.array(xs)
+        values = np.ones(len(xs))
+        return indices,values
+    def __get_handle_spm__(self):
+        return self.d
+
+
 class SimpleDataset(data.Dataset):
     def __init__(self, X_file):
         super(SimpleDataset, self).__init__()
@@ -32,6 +52,6 @@ def get_dataset(tfile):
 
 
 if __name__ == '__main__':
-    dataset = SimpleDataset("/home/apd10/experiments/projects/CompressCovariance/webspam/train.txt")
+    dataset = SimpleDNADataset("/home/apd10/experiments/projects/CompressCovariance/webspam/train.txt")
     dataset[5]
     pdb.set_trace()

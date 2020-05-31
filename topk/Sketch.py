@@ -76,28 +76,56 @@ class CountSketch() :
         self.topK = topK
         if topK is not None:
             self.topkds = TopKDs(topK)
+
+    def get_entrymatrix(self, values, normalizer):
+        l = values.shape[1]
+        entry_matrix = torch.matmul(values.reshape(l, 1), values) /normalizer # N X N
+        return entry_matrix
         
     def get_idmatrix(self, indices):
         l = indices.shape[1]
         ix = torch.transpose(indices, 0, 1).repeat(1, l)
         jx = indices.repeat((l,1))
         id_matrix = torch.triu(ix * self.max_d + jx, diagonal=1)
+        # THIS IS the only place to choose off diagnoal entries. now id == 0 implies that the id has to be ignored
+        # now use a mask at the end before inserting. This also takes care of padding for collating batches
         return id_matrix
+
+    def get_idmatrix_batch(self, indices):
+        ''' concat and create a single matrix of size (bN)xN'''
+        matrices = []
+        for i in range(indices.shape[0]):
+            id_matrix = self.get_idmatrix(indices[i].reshape(1, indices.shape[1]))
+            matrices.append(id_matrix)
+        return torch.cat(matrices)
+    def get_entrymatrix_batch(self, values, normalizer):
+        ''' concat and create a single matrix of size (bN)xN'''
+        matrices = []
+        for i in range(values.shape[0]):
+            entry_matrix = self.get_entrymatrix(values[i].reshape(1, values.shape[1]), normalizer)
+            matrices.append(entry_matrix)
+        return torch.cat(matrices)
+    
+
     def get_ij(self, idx):
         return idx//self.max_d, idx%self.max_d
         
     def get_GMatrix(self, id_matrix, i):
-        return torch.triu(torch.sign((self.GA[i] * id_matrix**2  + self.GB[i] * id_matrix + self.GC[i])%self.rng.big_prime %2 - 0.5), diagonal=1)
+        return torch.sign((self.GA[i] * id_matrix**2  + self.GB[i] * id_matrix + self.GC[i])%self.rng.big_prime %2 - 0.5)
 
     def get_HMatrix(self, id_matrix, i):
         return (self.HA[i] * id_matrix**2  + self.HB[i] * id_matrix + self.HC[i])%self.rng.big_prime %self.R
 
 
     def insert(self, indices, values, thold, updateKDS, normalizer): 
+        N = indices.shape[1]
+        B = indices.shape[0]
         
-        l = values.shape[1]
-        entry_matrix = torch.matmul(values.reshape(l, 1), values) /normalizer # N X N
-        id_matrix = self.get_idmatrix(indices)
+        entry_matrix = self.get_entrymatrix_batch(values, normalizer)
+        id_matrix = self.get_idmatrix_batch(indices)
+      
+        IDMask = id_matrix != 0
+        entry_matrix = torch.mul(entry_matrix, IDMask) # OFF DIAG
         
         if thold is not None:
             current_value = self.query(id_matrix)
@@ -116,14 +144,12 @@ class CountSketch() :
         # Insert the top K into the heap structure. Heap with CS setting is a bit unreliable. with 
         if self.topkds is not None and updateKDS:
           #print("Updating")
-          qvalues = self.query(id_matrix) # qvalues will be NxN
-
+          qvalues = self.query(id_matrix) # qvalues will be NxNxb
           #print("TOPK insertion Start")
-          l = qvalues.shape[0]
-          n = int(l*(l-1)/2)
+          n = int(N*(N-1)/2*B) # max values to enter
           if n == 0:
               return 
-          qvalues = torch.triu(qvalues, diagonal=1) # just in case
+          qvalues = torch.mul(IDMask, qvalues) # ignoring id = 0 OFF DIAG
           qvalues = torch.abs(qvalues) # absolute value
           qvalues = qvalues.reshape(1,-1).squeeze()
           ids = id_matrix.reshape(1,-1).squeeze()

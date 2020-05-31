@@ -100,7 +100,6 @@ filekey = 'DS{}_K{}_R{}_TOP{}'.format(DATASET, CS_REP, CS_RANGE, topK)
 
 
 assert(THRESHOLD_METHOD == "constant")
-BATCH=1
 
 def my_collate(batch):
     l = -1
@@ -160,7 +159,7 @@ def train(data_set, countsketch, max_d):
       
 
     ignored = 0
-    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=data_set.__len__()):
+    for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=data_set.__len__()//BATCH_SIZE):
         #indices batch x features
         #values batch x features
         if indices.shape[1] > 9000:
@@ -190,7 +189,7 @@ def train(data_set, countsketch, max_d):
         elif iteration * BATCH_SIZE < MU_SAMPLES + exploration_samples:
             # phase 2
             # we only add to count sketch without any sampling
-            countsketch.insert(indices, values, None, (iteration > dic_frac * data_set.__len__()), total_samples)
+            countsketch.insert(indices, values, None, (num_samples > dic_frac * data_set.__len__()), total_samples)
             continue
         else:
             # insert with thold
@@ -198,7 +197,7 @@ def train(data_set, countsketch, max_d):
               thold = None
             else:
               thold = init_threshold + (num_samples - exploration_samples - MU_SAMPLES) / total_samples * theta
-            countsketch.insert(indices, values, thold, (iteration > dic_frac * data_set.__len__()), total_samples)
+            countsketch.insert(indices, values, thold, (num_samples > dic_frac * data_set.__len__()), total_samples)
         #if iteration == data_set.__len__() -2:
     print("IGNORED", ignored)
 
@@ -237,7 +236,6 @@ def evaluate(data_set, countsketch, filekey):
           s = s + Cov[i,j]
           print(i,j,Cov[i,j])
         print("Mean of Top",len(dic),"values reported ", s / len(dic))
-        idmatrix = countsketch.get_idmatrix(torch.arange(0, X.shape[1]).reshape(1, X.shape[1]).cuda(device_id))
     else:
         s = 0
         X = data
