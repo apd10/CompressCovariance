@@ -93,6 +93,12 @@ THRESHOLD_INFER2_INEXP_FRAC = results.threshold_infer2_inexp_frac
 BATCH_SIZE = results.batch
 device_id = results.device_id
 
+
+max_d = 17_000_000
+topK = 1000
+filekey = 'DS{}_K{}_R{}_TOP{}'.format(DATASET, CS_REP, CS_RANGE, topK)
+
+
 assert(THRESHOLD_METHOD == "constant")
 BATCH=1
 
@@ -113,15 +119,15 @@ def my_collate(batch):
     return [indices_tensor, values_tensor]
 
 
-def train(data_file, countsketch, max_d):
-    dic_frac = 0.9
+def train(data_set, countsketch, max_d):
+    global filekey
+    dic_frac = 0.75
     global THRESHOLD_CONST_EXP
     # ===========================================================
     # Prepare train dataset & test dataset
     # ===========================================================
     print("***** prepare data ******")
 
-    data_set = get_dataset(data_file)
     total_samples = data_set.__len__() - MU_SAMPLES
     train_dataloader = torch.utils.data.DataLoader(dataset=data_set, batch_size=BATCH_SIZE, shuffle=True, collate_fn=my_collate)
     running_mu_sum = torch.zeros(max_d)
@@ -140,6 +146,18 @@ def train(data_file, countsketch, max_d):
       exploration_samples = THRESHOLD_CONST_EXP
       init_threshold = THRESHOLD_CONST_THOLD
       theta = THRESHOLD_CONST_THETA
+    else:
+      print("THOLD_METHOD NOT IMPLEMENTED")
+      assert(False)
+
+    if RUN_BASE:
+      exploration_samples = 0
+      init_threshold = 0
+      theta = 0
+    
+    filekey = filekey + 'TH{:.1e}_THETA{:.1e}_EXP{}'.format(init_threshold, theta, exploration_samples)
+
+      
 
     ignored = 0
     for iteration, (indices, values) in tqdm(enumerate(train_dataloader), total=data_set.__len__()):
@@ -162,34 +180,90 @@ def train(data_file, countsketch, max_d):
         running_std = torch.sqrt(running_mu2 - running_mu ** 2)  + 1e-6
         if INSERT == "correlation":
             # NOTE we are computing E(XY/(std(X) std(Y))) if we were to do -mu,  the data is not sparse
-            values = values  / running_std[indices]
-        values = values / total_samples
+            values = (values - running_mu[indices])  / running_std[indices]
+        else:
+            values = values - running_mu[indices]
 
         if iteration * BATCH_SIZE < MU_SAMPLES:
             # phase 1
             continue
         elif iteration * BATCH_SIZE < MU_SAMPLES + exploration_samples:
-            #npdb.set_trace()
             # phase 2
             # we only add to count sketch without any sampling
-            countsketch.insert(indices, values, None, (iteration > dic_frac * data_set.__len__()))
+            countsketch.insert(indices, values, None, (iteration > dic_frac * data_set.__len__()), total_samples)
             continue
         else:
             # insert with thold
-            thold = init_threshold + (num_samples - exploration_samples - MU_SAMPLES) / total_samples * theta
-            countsketch.insert(indices, values, thold, (iteration > dic_frac * data_set.__len__()))
-        if iteration == data_set.__len__() -2:
-            pdb.set_trace()
+            if RUN_BASE:
+              thold = None
+            else:
+              thold = init_threshold + (num_samples - exploration_samples - MU_SAMPLES) / total_samples * theta
+            countsketch.insert(indices, values, thold, (iteration > dic_frac * data_set.__len__()), total_samples)
+        #if iteration == data_set.__len__() -2:
     print("IGNORED", ignored)
 
-def dump_topk(countsketch):
-    with open(DATASET+"_topK.pickle", "wb") as f:
+def dump_topk(countsketch, filekey):
+    with open("./record/" + filekey+"_topK.pickle", "wb") as f:
       pickle.dump(countsketch.topkds.dictionary, f)
+
+def evaluate(data_set, countsketch, filekey):
+    data = data_set.__get_handle_spm__()
+    dic = countsketch.topkds.dictionary
+    SMALL = False
+    print("evaluating")
+    if SMALL:
+        X = data.todense()
+
+        if INSERT == "correlation":
+          mu = np.mean(X, axis=0) #(1,NUM_FEATURES)
+          std = np.std(X, axis=0) + 1e-6
+          X = (X - mu)/std
+        else:
+          mu = np.mean(X, axis=0) #(1,NUM_FEATURES)
+          X = X - mu
+
+        n = X.shape[1] * (X.shape[1] - 1) / 2
+        Cov = torch.FloatTensor(np.triu(np.matmul(X.transpose(), X) / X.shape[0] , k=1)).cuda(device_id)
+        Cov = torch.abs(Cov)
+        print("Mean Cov of All", torch.sum(Cov) / n)
+        # Report Top Cov
+        values = torch.topk(Cov.reshape(1,-1).squeeze(), k=len(dic))[0] # topK should be small like 1000
+        print("Mean of Top",len(dic),"values", torch.sum(values) / len(dic))
+        
+        # Report Actual cov of keys given by dic
+        s = 0
+        for key in dic.keys():
+          i,j = countsketch.get_ij(key)
+          s = s + Cov[i,j]
+          print(i,j,Cov[i,j])
+        print("Mean of Top",len(dic),"values reported ", s / len(dic))
+        idmatrix = countsketch.get_idmatrix(torch.arange(0, X.shape[1]).reshape(1, X.shape[1]).cuda(device_id))
+    else:
+        s = 0
+        X = data
+        for key in dic.keys():
+          i,j = countsketch.get_ij(key)
+          a = np.array(X[:,i].todense()).reshape(1,X.shape[0]) 
+          b = np.array(X[:,j].todense()).reshape(1,X.shape[0])
+          if np.std(a) > 0 and np.std(b) > 0:
+            if INSERT == "correlation":
+                cov = np.corrcoef(a,b)[0,1]
+            else:
+                cov = np.cov(a,b)[0,1]
+            cov = np.abs(cov)
+            s = s + cov
+        print(filekey, "Mean of Top",len(dic),"values reported ", s / len(dic))
+        with open("./record/" + filekey + "_finalvalue.txt", "w") as f:
+          f.write( filekey +  "Mean of Top" + str(len(dic)) + "values reported " +  str(s / len(dic))+"\n")
+      
 
 if __name__ == '__main__':
     datafile = '/home/apd10/experiments/projects/CompressCovariance/' + DATASET + '/train.txt'
-    max_d = 17_000_000
-    topK = 1000
+    print(filekey)
     countsketch = CountSketch(CS_REP, CS_RANGE, max_d, topK, device_id)
-    train(datafile, countsketch, max_d)
-    dump_topk(countsketch)
+
+    data_set = get_dataset(datafile)
+    print("DATA SHAPE", data_set.__get_handle_spm__().shape)
+    train(data_set, countsketch, max_d)
+    dump_topk(countsketch, filekey)
+    evaluate(data_set, countsketch, filekey)

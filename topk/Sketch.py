@@ -60,11 +60,9 @@ class CountSketch() :
         # a * x^2 + b * x + c
         self.rng = CRNG(101)
         random_numbers = self.rng.generate(self.d * 6) # 3 for h and 3 for g
-
         self.HA = torch.LongTensor(random_numbers[0:self.d])
         self.HB = torch.LongTensor(random_numbers[self.d:2*self.d])
         self.HC = torch.LongTensor(random_numbers[2*self.d:3*self.d])
-
         self.GA = torch.LongTensor(random_numbers[3*self.d:4*self.d])
         self.GB = torch.LongTensor(random_numbers[4*self.d:5*self.d])
         self.GC = torch.LongTensor(random_numbers[5*self.d:6*self.d])
@@ -79,23 +77,36 @@ class CountSketch() :
         if topK is not None:
             self.topkds = TopKDs(topK)
         
-
-    def insert(self, indices, values, thold, updateKDS): 
-        #print("Insert")
-        # make the 
-        #pdb.set_trace()
-        # TODO assumming batch size 1
-        l = values.shape[1]
-        entry_matrix = torch.matmul(values.reshape(l, 1), values) # N X N
+    def get_idmatrix(self, indices):
+        l = indices.shape[1]
         ix = torch.transpose(indices, 0, 1).repeat(1, l)
         jx = indices.repeat((l,1))
         id_matrix = torch.triu(ix * self.max_d + jx, diagonal=1)
-        # TODO take triu
-        #hash_location_matrices 
-  
+        return id_matrix
+    def get_ij(self, idx):
+        return idx//self.max_d, idx%self.max_d
+        
+    def get_GMatrix(self, id_matrix, i):
+        return torch.triu(torch.sign((self.GA[i] * id_matrix**2  + self.GB[i] * id_matrix + self.GC[i])%self.rng.big_prime %2 - 0.5), diagonal=1)
+
+    def get_HMatrix(self, id_matrix, i):
+        return (self.HA[i] * id_matrix**2  + self.HB[i] * id_matrix + self.HC[i])%self.rng.big_prime %self.R
+
+
+    def insert(self, indices, values, thold, updateKDS, normalizer): 
+        
+        l = values.shape[1]
+        entry_matrix = torch.matmul(values.reshape(l, 1), values) /normalizer # N X N
+        id_matrix = self.get_idmatrix(indices)
+        
+        if thold is not None:
+            current_value = self.query(id_matrix)
+            mask = torch.abs(current_value) > thold
+            entry_matrix = torch.mul(entry_matrix, mask)
+
         for i in range(self.d):
-          h_matrix = (self.HA[i] * id_matrix**2  + self.HB[i] * id_matrix + self.HC[i])%self.rng.big_prime %self.R
-          g_matrix = torch.triu(torch.sign((self.GA[i] * id_matrix**2  + self.GB[i] * id_matrix + self.GC[i])%self.rng.big_prime %2 - 0.5), diagonal=1) # Here we do the triu
+          h_matrix = self.get_HMatrix(id_matrix, i)
+          g_matrix = self.get_GMatrix(id_matrix, i)
           flat_index = h_matrix.reshape(1,-1).squeeze()
           flat_values = torch.mul(g_matrix, entry_matrix).reshape(1,-1).squeeze()
           self.sketch_memory[i].scatter_add_(0, flat_index, flat_values)
@@ -104,12 +115,14 @@ class CountSketch() :
 
         # Insert the top K into the heap structure. Heap with CS setting is a bit unreliable. with 
         if self.topkds is not None and updateKDS:
-          print("Updating")
+          #print("Updating")
           qvalues = self.query(id_matrix) # qvalues will be NxN
 
           #print("TOPK insertion Start")
           l = qvalues.shape[0]
           n = int(l*(l-1)/2)
+          if n == 0:
+              return 
           qvalues = torch.triu(qvalues, diagonal=1) # just in case
           qvalues = torch.abs(qvalues) # absolute value
           qvalues = qvalues.reshape(1,-1).squeeze()
@@ -121,17 +134,16 @@ class CountSketch() :
         #print("TOPK insertion done")
 
     def query(self, id_matrix): 
-        #pdb.set_trace()
         
         #print("Query")
         vs = []
         for i in range(self.d):
-          h_matrix = (self.HA[i] * id_matrix**2  + self.HB[i] * id_matrix + self.HC[i])%self.rng.big_prime %self.R
-          g_matrix = torch.triu(torch.sign((self.GA[i] * id_matrix**2  + self.GB[i] * id_matrix + self.GC[i])%self.rng.big_prime %2 - 0.5), diagonal=1) # Here we do the triu
+          h_matrix = self.get_HMatrix(id_matrix, i)
+          g_matrix = self.get_GMatrix(id_matrix, i)
           v = torch.mul(self.sketch_memory[i][h_matrix], g_matrix)
           vs.append(v)
         V = torch.stack(vs)
-        V = torch.sort(V)[0] # self.d x N x N
+        V = torch.sort(V, dim=0)[0] # self.d x N x N
         #print("Query Complete")
         if self.d %2 == 1:
             return V[self.d//2]

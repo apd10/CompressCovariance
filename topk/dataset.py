@@ -22,6 +22,8 @@ class SimpleDataset(data.Dataset):
         indices = np.array(x.col)
         values = np.array(x.data)
         return indices,values
+    def __get_handle_spm__(self):
+        return self.d
 
 
 
