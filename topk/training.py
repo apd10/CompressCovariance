@@ -8,7 +8,7 @@ import numpy as np
 from os import path
 import os
 
-from dataset import get_dataset
+from dataset import get_dataset,get_dna_dataset
 import pdb
 import argparse
 import time
@@ -260,8 +260,12 @@ if __name__ == '__main__':
     print(filekey)
     countsketch = CountSketch(CS_REP, CS_RANGE, max_d, topK, device_id)
 
-    data_set = get_dataset(datafile)
-    print("DATA SHAPE", data_set.__get_handle_spm__().shape)
+    if DATASET == "dna":
+      data_set = get_dna_dataset(datafile)
+    else:
+      data_set = get_dataset(datafile)
+      print("DATA SHAPE", data_set.__get_handle_spm__().shape)
     train(data_set, countsketch, max_d)
     dump_topk(countsketch, filekey)
-    evaluate(data_set, countsketch, filekey)
+    if DATASET != "dna":
+      evaluate(data_set, countsketch, filekey)

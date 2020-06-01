@@ -50,6 +50,9 @@ class SimpleDataset(data.Dataset):
 def get_dataset(tfile):
     return SimpleDataset(tfile)
 
+def get_dna_dataset(tfile):
+    return SimpleDNADataset(tfile)
+
 
 if __name__ == '__main__':
     dataset = SimpleDNADataset("/home/apd10/experiments/projects/CompressCovariance/webspam/train.txt")
