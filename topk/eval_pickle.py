@@ -39,6 +39,7 @@ def eval(dic, X):
     print("Mean of Top",len(dic),"values reported ", s / len(dic))
 
 
+
 if __name__ == '__main__':
     datafile = '/home/apd10/experiments/projects/CompressCovariance/' + DATASET + '/train.txt'
 

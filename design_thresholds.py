@@ -3,6 +3,7 @@ import math
 from scipy.stats import norm
 import pdb
 
+import argparse
 ''' chance of missing signal variables at the first sampling '''
 def get_saturation_prob(n, R, k, alpha):
     p = 0.5 + 0.5 * ((R - alpha) / R) ** (n - 1)
@@ -157,41 +158,33 @@ def find_best_theta(signal, alpha, init_threshold, num_features, cs_params, tota
 
 
 if __name__ == '__main__':
-    '''
-    n: number of covariance entries
-    R: length of each hash table, CS_RANGE
-    k: number of hash tables, CS_REP
-    alpha: proportion of signal variables (upper bound)
-    signal: the signal level (signal variables should be larger than 0.2)
-    sigma: variance of signal variable (sigma = 1 + signal^2)
-    t: length of exploration period
-    T: total sample size
-    '''
-    NUM_FEATURES = 1000
-    n = NUM_FEATURES * (NUM_FEATURES - 1) / 2
-    R = 12000
-    k = 5
-    alpha = 5 * 10 ** (-3)
-    signal = 0.2
-    sigma = 1.04 # 1 + signal^2
-    t = 1250 ## exploration period
-    T = 10000 ## Total number of samples
 
-    '''
-    Tau is the sampling threshold you choose right after the exploration period
-    '''
-    Tau = 0.01
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--signal', action="store", dest="signal", type=float, required=True,  help="")
+    parser.add_argument('--alpha', action="store", dest="alpha", type=float, required=True,  help="")
+    parser.add_argument('--init_thold', action="store", dest="init_thold", type=float, required=True,  help="")
+    parser.add_argument('--num_samples', action="store", dest="num_samples", type=float, required=True,  help="")
+    parser.add_argument('--num_entries', action="store", dest="num_entries", type=float, required=True,  help="")
+    parser.add_argument('--cs_r', action="store", dest="cs_r", type=int, required=True,  help="")
+    parser.add_argument('--cs_k', action="store", dest="cs_k", type=int, required=True,  help="")
+    parser.add_argument('--delta', action="store", dest="delta", type=float, required=True,  help="")
+    parser.add_argument('--delta_star', action="store", dest="delta_star", type=float, required=True,  help="")
+    res = parser.parse_args()
+    signal = res.signal
+    alpha = res.alpha
+    delta_star = res.delta_star
+    delta = res.delta
+    cs_k = res.cs_k
+    cs_r = res.cs_r
+    num_entries = res.num_entries
+    num_samples = res.num_samples
+    init_thold = res.init_thold
 
-    '''
-    theta is the step size to raise the sampling thresholds.
-    sampling thresholds at time t_0, Tau_{t_0} = Tau + theta*(t_0-t)/T 
-    '''
-    theta = 0.15
-
-    exp = find_best_exploration_period(signal, alpha, Tau, n, {"K":k, "R":R }, T, 0.1)
-    print("Exploration Period:", exp)
-    theta  = find_best_theta(signal, alpha, Tau, n, {"K":k, "R":R }, T, exp, 0.1)
-    print("theta:", theta)
+    exp = find_best_exploration_period_m2(signal, alpha, init_thold, num_entries, {"K":cs_k, "R":cs_r }, num_samples, delta)
+    #exp = 0.2*num_samples
+    print("----------------- Exploration Period:", exp)
+    theta  = find_best_theta(signal, alpha, init_thold, num_entries, {"K":cs_k, "R":cs_r }, num_samples, exp, delta_star)
+    print("----------------- theta:", theta)
     #for t in range(1, T, 500):
     #  print('Probability of missing a signal variable at exploration ',t,
     #        miss_prop_at_t(signal-Tau*T/t, n, R, k, sigma, signal, alpha, T, t))

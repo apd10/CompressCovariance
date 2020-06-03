@@ -267,5 +267,5 @@ if __name__ == '__main__':
       print("DATA SHAPE", data_set.__get_handle_spm__().shape)
     train(data_set, countsketch, max_d)
     dump_topk(countsketch, filekey)
-    if DATASET != "dna":
+    if not ( "dna" in DATASET):
       evaluate(data_set, countsketch, filekey)
