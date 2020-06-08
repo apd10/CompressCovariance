@@ -15,10 +15,12 @@ for FILE in FILES.split(','):
     d = pd.read_csv(FILE, sep=",", header=None) 
     d.columns = ["len", "frac", "meansig"]
     d = d[["frac", "meansig"]]
+    d = d.iloc[[0,2,4,12,25,49]]
     d.rename(columns={"frac": FILE+"FRAC", "meansig" : FILE+"SIG"}, inplace=True)
     dfs.append(d.transpose())
 if len(dfs) > 1:
   DF = dfs[0].append(dfs[1:])
 else:
   DF = dfs[0]
+#print(DF)
 DF.to_csv("~/experiments/projects/CompressCovariance/aggregate_sigs.csv")

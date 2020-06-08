@@ -1,6 +1,9 @@
 import pandas as pd  
 import numpy as np   
 import sys
+import matplotlib 
+matplotlib.rc('xtick', labelsize=15) 
+matplotlib.rc('ytick', labelsize=15) 
 import matplotlib.pyplot as plt
 import argparse
 import pdb
@@ -35,7 +38,7 @@ def getlabel(f):
     xs =  f.split('/')[-1].split('_')
     #return xs[5] + '_' + xs[-1] + '_' + xs[-2] + '_'  + xs[-3]
     if "infer2" in f:
-      lbl = "ASCS SIGPCT:"+xs[-2]
+      lbl = "ASCS[u:(pct:"+xs[-2]+")\u03B1:("+str(float(xs[8].replace("ALPHA","")))+")"
     elif "infer" in f:
       lbl = "ASCS SIG:"+xs[15]
     else:
@@ -86,8 +89,8 @@ for FILE in FILES.split(','):
               once = True
         a1.plot(lens[mask], f1maxs[mask], label=getlabel(FILE))
 
-a0.legend(prop={'size':8})
-a1.legend(prop={'size':8})
+a0.legend(prop={'size':15})
+a1.legend(prop={'size':15})
 mask = np.multiply(SIG >= MIN_SIG , SIG <= MAX_SIG)
 LENS = LENS[mask]
 SIG = SIG[mask]
@@ -101,11 +104,11 @@ else:
 #print(LENS)
 #print(SIG)
 #print (idx)
-a1.set_xticks(LENS[idx])
-a1.set_xticklabels([ '{}\n({:.1e})'.format(LENS[i], SIG[i]) for i in idx ] , rotation=45)
-a1.set_xlabel('Top number of actual signals')
-a0.set_ylabel('Actual Signal')
-a1.set_ylabel('Max F1 score obtained')
+#a1.set_xticks(LENS[idx])
+#a1.set_xticklabels([ '{}\n({:.1e})'.format(LENS[i], SIG[i]) for i in idx ] , rotation=45, fontsize=12)
+a1.set_xlabel('Top number of actual signals', fontsize=15)
+#a0.set_ylabel('Actual Signal', fontsize=15)
+#a1.set_ylabel('Max F1', fontsize=15)
 a0.grid()
 a1.grid()
 if SAVEFIG is None:

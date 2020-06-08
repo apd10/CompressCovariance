@@ -30,8 +30,8 @@ def getlabel(f):
 for FILE in FILES.split(','):
     print(FILE)
     d = pd.read_csv(FILE, sep=",", header=None) 
-    d.columns = ["len","meansig"]
-    plt.plot(d.len, d.meansig, label=getlabel(FILE))
+    d.columns = ["len","frac","meansig"]
+    plt.plot(d.frac, d.meansig, label=getlabel(FILE))
 
 plt.legend()
 plt.xlabel('Top reported by Sketch')

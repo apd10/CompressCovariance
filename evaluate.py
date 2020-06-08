@@ -30,6 +30,8 @@ parser.add_argument('--batch', action="store" , dest="batch", required=False, ty
                   help="Batch")
 parser.add_argument('--alpha', action="store" , dest="alpha", required=False, type=float, default=0.001,
                   help="expected alpha. fraction of signals for plotting")
+parser.add_argument('--eval_alpha', action="store" , dest="eval_alpha", required=False, type=float, default=None,
+                  help="Alpha for evaluation. x-axis of plots")
 parser.add_argument('--signal', action="store" , dest="signal", required=False, type=float, default=0.25,
                   help="expected alpha. fraction of signals for plotting")
 parser.add_argument('--threshold_method', action='store', dest='threshold_method', required=False, type=str, default=None,
@@ -76,6 +78,7 @@ THRESHOLD_CONST_THETA = results.threshold_const_theta
 THRESHOLD_CONST_EXP = results.threshold_const_exp
 THRESHOLD_CONST_EXP_FRAC = results.threshold_const_exp_frac
 ALPHA = results.alpha
+EVAL_ALPHA = results.eval_alpha
 SIGNAL = results.signal
 USE_NUM_SAMPLES = results.use_num_samples
 TARGET_PROB1 = results.target_prob1
@@ -85,6 +88,8 @@ FILTER = results.filter
 THRESHOLD_INFER2_SIG_PCT = results.threshold_infer2_sig_pct
 THRESHOLD_INFER2_INIT_PCT = results.threshold_infer2_init_pct
 THRESHOLD_INFER2_INEXP_FRAC = results.threshold_infer2_inexp_frac
+if EVAL_ALPHA is None:
+    EVAL_ALPHA = ALPHA
 
 if BATCH is None:
   if DATASET == "gisette" or DATASET == "gisette_shifted":
@@ -121,7 +126,7 @@ elif THRESHOLD_METHOD == "infer2":
   assert(TARGET_PROB1 is not None)
   
     
-filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{}_THETA{}_EXP{}_{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_PA{}_METHOD{}_TH{}_THETA{}_EXP{}_{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA,EVAL_ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -192,7 +197,7 @@ def sketch_data(data, countsketch, batch):
     print("exploration_samples", exploration_samples, "/", total_samples)
     theta = find_best_theta(SIGNAL, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, TARGET_PROB2) # 
     print("theta", theta)
-    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_METHOD{}_TH{:.1e}_THETA{:.1e}_EXP{}_TPROB1{}_TPROB2{}_SIGNAL{:.1e}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, theta, exploration_samples, TARGET_PROB1, TARGET_PROB2, SIGNAL, FILTER)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_PA{}_METHOD{}_TH{:.1e}_THETA{:.1e}_EXP{}_TPROB1{}_TPROB2{}_SIGNAL{:.1e}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, EVAL_ALPHA, THRESHOLD_METHOD, THRESHOLD_INFER_THOLD, theta, exploration_samples, TARGET_PROB1, TARGET_PROB2, SIGNAL, FILTER)
     print("Updated filekey")
     print(filekey)
 
@@ -252,7 +257,7 @@ def sketch_data(data, countsketch, batch):
     print("exploration_samples", exploration_samples, "/", total_samples)
     theta = find_best_theta(signal, ALPHA, init_threshold, num_entries_in_cs, {"K": CS_REP , "R": CS_RANGE}, total_samples, exploration_samples, TARGET_PROB2, sigma = sigma) # 
     print("theta", theta)
-    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{:.2e}_METHOD{}_TH{:.2e}_THETA{:.2e}_INEXP{}_EXP{}_{}_TPROB1{}_TPROB2{}_SIGNAL{:.2e}_{}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA, THRESHOLD_METHOD, init_threshold, theta, in_exploration_samples, THRESHOLD_INFER2_INEXP_FRAC, exploration_samples, TARGET_PROB1, TARGET_PROB2, signal, THRESHOLD_INFER2_SIG_PCT, FILTER)
+    filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{:.2e}_PA{:.2e}_METHOD{}_TH{:.2e}_THETA{:.2e}_INEXP{}_EXP{}_{}_TPROB1{}_TPROB2{}_SIGNAL{:.2e}_{}_FILTER{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA,EVAL_ALPHA, THRESHOLD_METHOD, init_threshold, theta, in_exploration_samples, THRESHOLD_INFER2_INEXP_FRAC, exploration_samples, TARGET_PROB1, TARGET_PROB2, signal, THRESHOLD_INFER2_SIG_PCT, FILTER)
     print("Updated filekey")
     print(filekey)
     exploration_samples = exploration_samples - in_exploration_samples
@@ -378,7 +383,7 @@ def evaluate(data, countsketch, record_dir, filekey):
   printStats(cs_covariances)
   
 
-  sparsity=2*ALPHA
+  sparsity=EVAL_ALPHA
   topQ = int(len(covariances) * sparsity)
   topP = min(len(covariances)-1, int(len(covariances) * sparsity * 4))
   
@@ -418,7 +423,7 @@ def evaluate(data, countsketch, record_dir, filekey):
   df = df.sort_values(['cs_cov'], ascending=False)
   num = 100
   values = []
-  for frac in np.arange(0.1,1.0,0.1):
+  for frac in np.arange(0.01,1.0,0.02):
     t = int(topQ * frac)
     values.append('{},{},{}\n'.format(t, frac, np.mean(df[:t]["cov"])))
 
