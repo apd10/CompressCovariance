@@ -26,6 +26,8 @@ def get_ij(x):
 
 def eval(dic, X):
     s = 0
+    lines = []
+    ip = 0
     for key in dic.keys():
         i,j = get_ij(key)
         a = np.array(X[:,i].todense()).reshape(1,X.shape[0]) 
@@ -34,9 +36,12 @@ def eval(dic, X):
             cov = np.corrcoef(a,b)[0,1]
             cov = np.abs(cov)
             s = s + cov
+            ip = ip + 1
             print(key, i, j, cov)
+            if ip % 500 == 0:
+                lines.append('{} - {} {} {} cs: {} act: {} avg: {}\n'.format(ip, key, i, j, dic[key], cov, s/ip))
     
-    print("Mean of Top",len(dic),"values reported ", s / len(dic))
+    print(lines)
 
 
 
@@ -48,6 +53,10 @@ if __name__ == '__main__':
     values =  [ i for i in dic.values()]
     print(np.min(values), np.max(values), np.mean(values))
     
-    #X = skds.load_svmlight_file("../url/train.txt")[0]
-    #eval(dic, X)
+    print("Loading")
+    X = skds.load_svmlight_file("../url/train.txt")[0]
+    print("Loaded")
+    X = X.tocoo().tocsc()
+    print("converted")
+    eval(dic, X)
 

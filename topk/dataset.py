@@ -40,6 +40,7 @@ class SimpleDataset(data.Dataset):
     def __getitem__(self, index):
         x = self.d.getrow(index).tocoo()
         indices = np.array(x.col)
+        indices = indices + 1 # IT IS SHIFTED we want 1 based. 0 is used for invalid index
         values = np.array(x.data)
         return indices,values
     def __get_handle_spm__(self):

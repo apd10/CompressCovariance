@@ -79,7 +79,7 @@ class CountSketch() :
 
     def get_entrymatrix(self, values, normalizer):
         l = values.shape[1]
-        entry_matrix = torch.matmul(values.reshape(l, 1), values) /normalizer # N X N
+        entry_matrix = torch.matmul(values.reshape(l, 1), values) /normalizer # N X N  TODO Here we need to make sure if any id is 0, the value is 0. Currently this is happening but might be problematic in future. FIX this 
         return entry_matrix
         
     def get_idmatrix(self, indices):

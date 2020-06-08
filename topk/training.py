@@ -68,6 +68,12 @@ parser.add_argument('--threshold.infer2.inexp_frac', action="store" , dest="thre
                   help="constant threshold specified from outside")
 parser.add_argument('--device_id', action="store", dest="device_id", default=0, type=int,
                     help="device gpu id")
+
+parser.add_argument('--topK', action="store", dest="topK", default=1000, type=int,
+                    help="heap size ")
+parser.add_argument('--dic_frac', action="store", dest="dic_frac", default=0.75, type=float,
+                    help="dic_frac")
+parser.add_argument('--print_pct', action="store_true", required = False, default = False, help="print approx pctiles")
 results = parser.parse_args()
 DATASET = results.dataset
 INSERT = results.insert # default correlation
@@ -92,10 +98,10 @@ THRESHOLD_INFER2_INIT_PCT = results.threshold_infer2_init_pct
 THRESHOLD_INFER2_INEXP_FRAC = results.threshold_infer2_inexp_frac
 BATCH_SIZE = results.batch
 device_id = results.device_id
-
-
+topK = results.topK
+DIC_FRAC = results.dic_frac
+PRINTPCT = results.print_pct
 max_d = 17_000_000
-topK = 1000
 filekey = 'DS{}_K{}_R{}_TOP{}'.format(DATASET, CS_REP, CS_RANGE, topK)
 
 
@@ -120,12 +126,13 @@ def my_collate(batch):
 
 def train(data_set, countsketch, max_d):
     global filekey
-    dic_frac = 0.75
+    dic_frac = DIC_FRAC
     global THRESHOLD_CONST_EXP
     # ===========================================================
     # Prepare train dataset & test dataset
     # ===========================================================
     print("***** prepare data ******")
+    max_index = 0
 
     total_samples = data_set.__len__() - MU_SAMPLES
     train_dataloader = torch.utils.data.DataLoader(dataset=data_set, batch_size=BATCH_SIZE, shuffle=True, collate_fn=my_collate)
@@ -167,6 +174,7 @@ def train(data_set, countsketch, max_d):
           print("IGNORED", ignored)
           total_samples = total_samples -1
           continue
+        max_index = max(max_index, torch.max(indices))
 
         # update the mu and std
         num_samples =  (iteration + 1) * BATCH_SIZE
@@ -199,6 +207,24 @@ def train(data_set, countsketch, max_d):
               thold = init_threshold + (num_samples - exploration_samples - MU_SAMPLES) / total_samples * theta
             countsketch.insert(indices, values, thold, (num_samples > dic_frac * data_set.__len__()), total_samples)
         #if iteration == data_set.__len__() -2:
+    if PRINTPCT:
+      NUM = 100000
+      id1 = torch.randint(1, max_index, (1,NUM)).cuda(device_id)
+      id2 = torch.randint(1, max_index, (1,NUM)).cuda(device_id)
+      idxs = torch.stack([id1, id2])
+      idxs = torch.sort(idxs, dim=0)[0]
+      id1 = idxs[0]
+      id2 = idxs[1]
+      id_vec = id1 * max_d + id2
+      values = countsketch.query(id_vec)
+      values = torch.sort(torch.abs(values))[0]
+      pctileX = np.array([0.5, 0.75, 0.8, 0.85, 0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999])
+      pctile = pctileX * NUM
+      pctile = pctile.astype(int)
+      values = np.array(values.cpu())
+      values = values.reshape(values.size,)
+      print(pctileX)
+      print(values[pctile])
     print("IGNORED", ignored)
 
 def dump_topk(countsketch, filekey):
@@ -238,7 +264,8 @@ def evaluate(data_set, countsketch, filekey):
         print("Mean of Top",len(dic),"values reported ", s / len(dic))
     else:
         s = 0
-        X = data
+        X = data.tocoo().tocsc()
+        ip = 0
         for key in dic.keys():
           i,j = countsketch.get_ij(key)
           a = np.array(X[:,i].todense()).reshape(1,X.shape[0]) 
@@ -250,6 +277,9 @@ def evaluate(data_set, countsketch, filekey):
                 cov = np.cov(a,b)[0,1]
             cov = np.abs(cov)
             s = s + cov
+            ip = ip + 1
+            if ip % 500 == 0:
+                print('{} - {} {} {} cs: {} act: {} avg: {}\n'.format(ip, key, i, j, dic[key], cov, s/ip))
         print(filekey, "Mean of Top",len(dic),"values reported ", s / len(dic))
         with open("./record/" + filekey + "_finalvalue.txt", "w") as f:
           f.write( filekey +  "Mean of Top" + str(len(dic)) + "values reported " +  str(s / len(dic))+"\n")
