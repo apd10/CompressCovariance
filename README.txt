@@ -4,7 +4,7 @@ BASE_DIR = directory in which evaluate.py is located
 ## Setup Datasets: 
 By default we have a script for gisette dataset. you can change the name of dataset and the http path to the svm file to generate data for other datasets. To generate the gisette data
 Run :
-sh  setup_dataset.sh
+sh  setup_datasets.sh
 You can see that the gisette folder is created with the dataset and an empty folder "record". The runs of algorithm will dump values in this directory
 
 ## Run the commands.
@@ -29,11 +29,11 @@ the correlations* files have topK correlations in csv format K,fraction_of_alpha
 # Experiment 2
 # base directory is $BASE_DIR/topK
 cd $BASE_DIR/topK/
-sh setup_dataset.sh
+sh setup_datasets.sh
 
 To generate the results for URL dataset
 nohup python3 training.py --dataset url --batch 50 --device_id 0 --countsketch.repetitions 5 --countsketch.range 1000000 --insert.samples_for_mu 1000 --threshold_method constant --threshold.const.thold 0.0001 --threshold.const.theta 1.7 --threshold.const.exp_frac 0.2 --insert correlation
 # run_base CS
-nohup python3 training.py --dataset url --batch 50 --device_id 0 --countsketch.repetitions 5 --countsketch.range 1000000 --insert.samples_for_mu 1000 --threshold_method constant --threshold.const.thold 0.0001 --threshold.const.theta 1.7 --threshold.const.exp_frac 0.2 --insert correlation --run_base
+nohup python3 training.py --dataset url --batch 50 --device_id 0 --countsketch.repetitions 5 --countsketch.range 1000000 --insert.samples_for_mu 1000 --threshold_method constant --threshold.const.thold 0.0001 --threshold.const.theta 1.7 --threshold.const.exp_frac 0.2 --insert correlation --run_base # run_base overrides all configs
 
 
