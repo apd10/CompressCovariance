@@ -18,6 +18,7 @@ from Sketch import *
 from tqdm import tqdm
 import pickle
 
+cur_dir = dirname(abspath(__file__))
 
 parser = argparse.ArgumentParser()
 parser = argparse.ArgumentParser()
@@ -286,7 +287,9 @@ def evaluate(data_set, countsketch, filekey):
       
 
 if __name__ == '__main__':
-    datafile = '/home/apd10/experiments/projects/CompressCovariance/' + DATASET + '/train.txt'
+    #datafile = '/home/apd10/experiments/projects/CompressCovariance/' + DATASET + '/train.txt'
+
+    datafile = join(cur_dir, "../" + DATASET, "train.txt")
     print(filekey)
     countsketch = CountSketch(CS_REP, CS_RANGE, max_d, topK, device_id)
 
