@@ -8,7 +8,7 @@ sh  setup_datasets.sh
 You can see that the gisette folder is created with the dataset and an empty folder "record". The runs of algorithm will dump values in this directory
 
 ## Run the commands.
-To generate relevant commands for gisette run the following : 
+To generate relevant commands for gisette run the following :  (these run on CPU. we ran it on 28 cores. feel free to change parameters of taskset -c <> to adjust to requirements. 28core takes hardly a minute to run)
 bash exp1.sh | grep gisette
 
 Every command line will generate two files in the record folder.
@@ -31,7 +31,8 @@ the correlations* files have topK correlations in csv format K,fraction_of_alpha
 cd $BASE_DIR/topK/
 sh setup_datasets.sh
 
-To generate the results for URL dataset
+To generate the results for URL dataset # These require  a GPU to run . We ran it on 16 GB GPU. However this command for url with range 10^6 can run in lower memory < 4GB . If it crashes, just reduce the batch size.
+
 nohup python3 training.py --dataset url --batch 50 --device_id 0 --countsketch.repetitions 5 --countsketch.range 1000000 --insert.samples_for_mu 1000 --threshold_method constant --threshold.const.thold 0.0001 --threshold.const.theta 1.7 --threshold.const.exp_frac 0.2 --insert correlation
 # run_base CS
 nohup python3 training.py --dataset url --batch 50 --device_id 0 --countsketch.repetitions 5 --countsketch.range 1000000 --insert.samples_for_mu 1000 --threshold_method constant --threshold.const.thold 0.0001 --threshold.const.theta 1.7 --threshold.const.exp_frac 0.2 --insert correlation --run_base # run_base overrides all configs
