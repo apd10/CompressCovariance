@@ -18,7 +18,6 @@ def Gfunction(seed):
     #  seed = np.random.randint(0,100000)
     return lambda x : np.sign(murmurhash3_32(key=x, seed=seed))
 
-
 class TopKDs() :
     ''' This is a data structure for top k elements 
         To optimize find, insert, delete minimum and update operations
@@ -63,7 +62,58 @@ class TopKDs() :
     def getTop(self):
         return self.dictionary
    
-    
+
+class ASketch():
+    def __init__(self, d, R, input_size, filter_size):
+      self.d = d
+      self.R = R
+      self.input_size = input_size
+      self.filter_size = filter_size
+
+      # filter params
+      self.new_count = np.zeros(filter_size)
+      self.old_count = np.zeros(filter_size)
+      self.ids = np.ones(filter_size) * -1
+      self.store_id = 0
+
+      # CountSketch Params 
+      self.countsketch = CountSketch(d, R, input_size)
+
+
+    def query_all(self):
+        pdb.set_trace()
+        estimates = self.countsketch.query_all()
+        if self.store_id == self.filter_size:
+            estimates[self.ids] = self.new_count
+        return estimates
+
+    def insert_all(self, values): 
+      pdb.set_trace()
+      if self.store_id < self.filter_size:
+          # if the filter is empty
+          assert(self.filter_size < self.input_size) # thats to be expected
+          # get the max values and update the filter
+          self.ids = values.argsort()[-self.filter_size:]
+          self.new_count = values[self.ids]
+          self.store_id = self.filter_size
+      else:
+          # update ids present
+          self.new_count = self.new_count + values[self.ids]
+          values[self.ids] = 0 # omit these values
+          self.countsketch.insert_all(values)
+          
+          estimates = self.query_all()
+          # this is the new estimate
+          new_ids = estimates.argsort()[-self.filter_size:]
+          new_count = estimates[new_ids]
+          old_count = np.array(new_count)
+
+          # ids that were deleted
+          del_ids = np.array(set(self.ids) - set(new_ids))
+          updates = np.zeros(self.input_size)
+          updates[del_ids] = self.new_count[del_ids] - self.old_count[del_ids]
+          self.countsketch.insert_all(updates)
+
     
 
 class CountSketch() :
@@ -187,4 +237,7 @@ class CountMinSketch() :
             else:
                 value = min(value, self.sketch_memory[i][self.hs[i](key)])
         return value
+
+
+
 

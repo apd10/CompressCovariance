@@ -18,6 +18,9 @@ parser.add_argument('--dataset', action="store", dest="dataset", type=str, requi
                     help="Dataset")
 parser.add_argument('--insert', action="store", default="correlation",
                     help="insert all pairs explicitly")
+parser.add_argument('--asketch', action="store_true", default=False, help="use Asketch")
+parser.add_argument('--asketch.filter_size', action="store", dest="asketch_filter_size", default=None, help="Asketch Filter size")
+
 parser.add_argument('--countsketch.repetitions', action="store", dest="cs_rep", required=True, type=int,
                    help="number of repititions")
 parser.add_argument('--countsketch.range', action="store", dest="cs_range", required=True, type=int,
@@ -88,6 +91,9 @@ FILTER = results.filter
 THRESHOLD_INFER2_SIG_PCT = results.threshold_infer2_sig_pct
 THRESHOLD_INFER2_INIT_PCT = results.threshold_infer2_init_pct
 THRESHOLD_INFER2_INEXP_FRAC = results.threshold_infer2_inexp_frac
+ASKETCH = results.asketch
+ASKETCH_FILTER_SIZE = results.asketch_filter_size
+
 if EVAL_ALPHA is None:
     EVAL_ALPHA = ALPHA
 
@@ -107,6 +113,15 @@ if RUN_BASE:
   THRESHOLD_CONST_THETA = 0
   THRESHOLD_CONST_EXP = 0
   THRESHOLD_CONST_EXP_FRAC = 0
+if ASKETCH:
+  assert(ASKETCH_FILTER_SIZE is not None)
+  THRESHOLD_METHOD = "constant"
+  THRESHOLD_CONST_THOLD = 0
+  THRESHOLD_CONST_THETA = 0
+  THRESHOLD_CONST_EXP = 0
+  THRESHOLD_CONST_EXP_FRAC = 100
+
+
 assert(THRESHOLD_METHOD is not None)
 print("Threshold", THRESHOLD_METHOD)
 if THRESHOLD_METHOD == "constant":
@@ -126,7 +141,7 @@ elif THRESHOLD_METHOD == "infer2":
   assert(TARGET_PROB1 is not None)
   
     
-filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_PA{}_METHOD{}_TH{}_THETA{}_EXP{}_{}_FILT{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA,EVAL_ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER)
+filekey = 'INS{}_CRG{}_CRP{}_MUSMP{}_TS{}_NUMFEAT{}_BT{}_ALPHA{}_PA{}_METHOD{}_TH{}_THETA{}_EXP{}_{}_FILT{}_ASKETCH{}_{}'.format(INSERT,CS_RANGE,CS_REP,MU_SAMPLES, USE_NUM_SAMPLES, NUM_FEATURES, BATCH, ALPHA,EVAL_ALPHA, THRESHOLD_METHOD, THRESHOLD_CONST_THOLD, THRESHOLD_CONST_THETA, THRESHOLD_CONST_EXP ,THRESHOLD_CONST_EXP_FRAC, FILTER, ASKETCH, ASKETCH_FILTER_SIZE)
 
 def printStats(series):
   print('Mean:  Min  Max  10%ile  20%ile  30%iile  40%ile  50%ile  60ile  70ile  80ile  90ile  95ile  99ile  99.99  99.999')
@@ -476,13 +491,12 @@ if __name__ == '__main__':
   data = data[:,features] # keep only the first few features
   _indices = np.triu_indices(NUM_FEATURES, k=1)
   if True:
-    countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
+    if ASKETCH:
+      countsketch = ASketch(CS_REP, CS_RANGE, len(_indices[0]), ASKETCH_FILTER_SIZE)
+    else:
+      countsketch = CountSketch(CS_REP, CS_RANGE, len(_indices[0]))
     sketch_data(data, countsketch, BATCH)
     evaluate(data, countsketch, record_dir, filekey)
-
-
-
-
 
 
 '''
